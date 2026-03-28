@@ -1,0 +1,113 @@
+/* 12 Reader — Shared Design Tokens & Reset */
+
+:root {
+  /* Color Palette */
+  --bg: #f4efe6;
+  --panel: rgba(255, 251, 245, 0.94);
+  --panel-strong: #fffdf8;
+  --text: #1f1b16;
+  --muted: #6f6558;
+  --line: rgba(57, 43, 31, 0.14);
+  --accent: #0b6b6f;
+  --accent-strong: #074b4d;
+  --accent-soft: rgba(11, 107, 111, 0.12);
+  --sentence-hl: rgba(249, 203, 61, 0.28);
+  --word-hl: rgba(234, 94, 42, 0.4);
+  --shadow: 0 24px 60px rgba(34, 24, 15, 0.12);
+  --shadow-sm: 0 4px 12px rgba(34, 24, 15, 0.08);
+
+  /* Typography */
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-copy: "Source Serif 4", Georgia, serif;
+  --font-mono: "Fira Code", "Monaco", "Courier Prime", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(11, 107, 111, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(208, 149, 84, 0.18), transparent 28%),
+    linear-gradient(180deg, #faf6ef 0%, #f4efe6 100%);
+  overflow-x: hidden;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Accessibility: Respect motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Utility: Hidden element */
+.hidden {
+  display: none !important;
+}
+
+/* Scroll Reveal Animation (controlled by JS via IntersectionObserver) */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  will-change: opacity, transform;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Focus States (keyboard navigation) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

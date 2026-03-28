@@ -1,0 +1,751 @@
+@import url("base.css");
+
+/* 12 Reader – Application Layout & Components */
+
+.app-shell {
+    width: min(1400px, calc(100vw - 32px));
+    margin: 0 auto;
+    padding: 28px 0 40px;
+    animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes highlightPulse {
+    from {
+        opacity: 0;
+        transform: scaleY(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scaleY(1);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
+}
+
+/* Navigation */
+.reader-nav {
+    margin-bottom: 20px;
+    animation: slideDown 0.5s ease-out;
+}
+
+.nav-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.nav-home:hover {
+    background: var(--accent-soft);
+    transform: translateX(-4px);
+}
+
+/* Hero Section */
+.hero {
+    padding: 24px 28px 10px;
+    animation: slideUp 0.6s ease-out 0.1s both;
+}
+
+.eyebrow {
+    margin: 0 0 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.hero h1 {
+    margin: 0;
+    max-width: 12ch;
+    font-size: clamp(2.4rem, 5vw, 4.8rem);
+    line-height: 0.94;
+}
+
+.hero-copy {
+    margin: 18px 0 0;
+    max-width: 70ch;
+    font-size: 1.03rem;
+    line-height: 1.65;
+    color: var(--muted);
+}
+
+/* Control Panel */
+.control-panel,
+.reader-notes,
+.viewer-panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.control-panel {
+    margin: 0 0 24px;
+    padding: 18px 22px;
+    animation: slideUp 0.6s ease-out 0.2s both;
+}
+
+.control-panel:hover {
+    border-color: var(--accent);
+    box-shadow: 0 24px 60px rgba(11, 107, 111, 0.15);
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.control-row + .control-row {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+}
+
+.upload-row {
+    flex-wrap: wrap;
+}
+
+.file-picker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 180px;
+    padding: 14px 18px;
+    border-radius: 16px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.file-picker::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: var(--accent-strong);
+    transition: left 0.3s ease;
+    z-index: -1;
+}
+
+.file-picker:hover::before {
+    left: 0;
+}
+
+.file-picker:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px rgba(11, 107, 111, 0.3);
+}
+
+.file-picker:active {
+    transform: translateY(-1px);
+}
+
+.file-picker input {
+    display: none;
+}
+
+.helper-text,
+.document-meta,
+.reader-notes li {
+    color: var(--muted);
+}
+
+.helper-text,
+.document-meta {
+    margin: 0;
+    line-height: 1.55;
+}
+
+.settings-row {
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 240px;
+}
+
+.field-small {
+    min-width: 120px;
+}
+
+.field span {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+select,
+.button-row button {
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 2px solid var(--line);
+    background: var(--panel-strong);
+    color: var(--text);
+    transition: all 0.3s ease;
+}
+
+select:hover {
+    border-color: var(--accent);
+    background: white;
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-left: auto;
+}
+
+.button-row button {
+    padding: 0 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.button-row button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.1);
+    transition: left 0.3s ease;
+    z-index: -1;
+}
+
+.button-row button:hover::before {
+    left: 0;
+}
+
+.button-row button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(31, 27, 22, 0.15);
+}
+
+.button-row button:active {
+    transform: translateY(-1px);
+}
+
+.button-row button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+#play-from-start-btn,
+#resume-btn {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+}
+
+.button-muted {
+    background: transparent;
+}
+
+/* Audio Progress Bar */
+.audio-progress-bar {
+    margin: 0 0 24px;
+    padding: 16px 22px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    animation: slideUp 0.6s ease-out 0.25s both;
+}
+
+.progress-track {
+    height: 6px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.1s linear;
+    width: 0%;
+}
+
+.progress-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+/* Keyboard Hints */
+.kbd-hints {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 500;
+    min-width: 28px;
+    min-height: 24px;
+}
+
+/* Status Messages */
+.status-row {
+    justify-content: space-between;
+    animation: slideUp 0.6s ease-out 0.25s both;
+}
+
+.status-text {
+    margin: 0;
+    font-weight: 600;
+    animation: fadeIn 0.6s ease-out 0.3s both;
+    transition: color 0.2s ease;
+}
+
+.status-text[data-state="error"] {
+    color: #c0392b;
+}
+
+.status-text[data-state="playing"] {
+    color: var(--accent);
+}
+
+.status-text[data-state="ready"] {
+    color: var(--text);
+}
+
+.status-text[data-state="success"] {
+    color: var(--accent);
+}
+
+.loading-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-weight: 700;
+    animation: slideInRight 0.4s ease-out;
+}
+
+.loading-indicator::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-strong);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Reader Layout */
+.reader-layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 24px;
+    animation: slideUp 0.6s ease-out 0.3s both;
+}
+
+/* Reader Notes Sidebar (Collapsible) */
+.reader-notes {
+    padding: 22px;
+    align-self: start;
+    animation: slideUp 0.6s ease-out 0.35s both;
+    max-width: 300px;
+    width: 300px;
+    transition: max-width 0.3s ease, width 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
+}
+
+.reader-notes:hover {
+    border-color: var(--accent);
+}
+
+.reader-notes.collapsed {
+    max-width: 0;
+    width: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.sidebar-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+}
+
+.sidebar-toggle:hover {
+    border-color: var(--accent);
+    background: var(--panel-strong);
+}
+
+.reader-notes h2 {
+    margin: 0 0 14px;
+    font-size: 1rem;
+}
+
+.reader-notes ul {
+    margin: 0;
+    padding-left: 18px;
+    line-height: 1.7;
+}
+
+/* Viewer Panel */
+.viewer-panel {
+    min-height: 72vh;
+    padding: 14px;
+    animation: slideUp 0.6s ease-out 0.4s both;
+}
+
+.viewer-panel:hover {
+    border-color: var(--accent);
+}
+
+.viewer-scroll-area {
+    height: calc(72vh - 28px);
+    overflow: auto;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(248, 243, 234, 0.9));
+    border: 1px solid rgba(57, 43, 31, 0.08);
+}
+
+.document-viewer {
+    position: relative;
+    min-height: 100%;
+    padding: 26px;
+}
+
+.empty-state {
+    display: grid;
+    place-items: center;
+    min-height: 60vh;
+    text-align: center;
+    color: var(--muted);
+}
+
+.empty-state h2 {
+    margin: 0 0 8px;
+    color: var(--text);
+}
+
+/* Document Styles */
+.pdf-page,
+.rich-document,
+.markdown-document,
+.txt-document,
+.docx-wrapper {
+    cursor: text;
+}
+
+.rich-document,
+.markdown-document,
+.txt-document {
+    width: min(840px, 100%);
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 52px);
+    border-radius: 22px;
+    background: #fffdfa;
+    box-shadow: 0 12px 34px rgba(39, 29, 20, 0.08);
+    line-height: 1.72;
+}
+
+.markdown-document :is(h1, h2, h3, h4),
+.rich-document :is(h1, h2, h3, h4),
+.txt-document :is(h1, h2, h3, h4) {
+    line-height: 1.1;
+}
+
+.markdown-document h1,
+.rich-document h1 {
+    font-size: clamp(2rem, 3vw, 2.8rem);
+}
+
+.markdown-document pre,
+.rich-document pre {
+    padding: 16px;
+    overflow: auto;
+    border-radius: 14px;
+    background: #f6f1e8;
+    font-family: var(--font-mono);
+}
+
+.markdown-document code,
+.rich-document code,
+code,
+pre {
+    font-family: var(--font-mono);
+}
+
+.markdown-document code,
+.rich-document code {
+    background: #f3ece1;
+    padding: 0.12em 0.35em;
+    border-radius: 6px;
+}
+
+.txt-document {
+    font-size: 1.05rem;
+}
+
+.txt-document p {
+    margin: 0 0 1rem;
+}
+
+.pdf-page {
+    position: relative;
+    margin: 0 auto 18px;
+}
+
+.pdf-page .page {
+    margin: 0 auto 18px;
+    box-shadow: 0 12px 34px rgba(39, 29, 20, 0.12);
+}
+
+/* Reader Runs & Highlights */
+.reader-run,
+.pdf-run {
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.reader-run:hover,
+.pdf-run:hover {
+    background: rgba(11, 107, 111, 0.12);
+}
+
+.reader-run:active,
+.pdf-run:active {
+    background: rgba(11, 107, 111, 0.16);
+}
+
+.highlight-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 35;
+}
+
+.reader-highlight {
+    position: absolute;
+    border-radius: 5px;
+    animation: highlightPulse 0.4s ease-out;
+}
+
+.reader-highlight--sentence {
+    background: var(--sentence-hl);
+    transition: background 0.2s ease;
+}
+
+.reader-highlight--word {
+    background: var(--word-hl);
+    transition: background 0.2s ease;
+}
+
+.document-viewer .textLayer {
+    z-index: 20;
+}
+
+.document-viewer .annotationLayer {
+    z-index: 25;
+}
+
+/* Responsive Design */
+@media (max-width: 980px) {
+    .reader-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .reader-notes {
+        order: 2;
+        max-width: 100%;
+        width: 100%;
+    }
+
+    .reader-notes.collapsed {
+        display: none;
+    }
+
+    .sidebar-toggle {
+        order: 1;
+        display: flex;
+    }
+
+    .viewer-panel {
+        order: 1;
+    }
+}
+
+@media (max-width: 720px) {
+    .app-shell {
+        width: min(100vw - 16px, 1400px);
+        padding-top: 14px;
+    }
+
+    .hero,
+    .control-panel {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .document-viewer {
+        padding: 12px;
+    }
+
+    .viewer-panel {
+        padding: 10px;
+    }
+
+    .viewer-scroll-area {
+        height: 70vh;
+    }
+
+    .button-row {
+        margin-left: 0;
+    }
+
+    .kbd-hints {
+        font-size: 0.75rem;
+        gap: 8px;
+    }
+
+    kbd {
+        padding: 3px 6px;
+        font-size: 0.7rem;
+        min-width: 24px;
+        min-height: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .control-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .field {
+        min-width: 100%;
+    }
+
+    .button-row {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .button-row button {
+        width: 100%;
+    }
+
+    .kbd-hints {
+        flex-direction: column;
+    }
+}

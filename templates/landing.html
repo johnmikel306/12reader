@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="12 Reader – Stream any document aloud with natural voices, instant highlighting, and seamless playback.">
+    <title>12 Reader – Stream Read Aloud</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav-header">
+        <div class="nav-container">
+            <div class="logo">12 Reader</div>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+            </ul>
+            <a href="/reader" class="nav-cta">Open Reader →</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero-section reveal">
+        <div class="hero-content">
+            <h1 class="hero-title">Read Any Document Aloud</h1>
+            <p class="hero-subtitle">Upload PDFs, Word docs, markdown, or plain text. Click anywhere to start reading. Instant streaming audio with synchronized highlighting.</p>
+            <a href="/reader" class="cta-button">Start Reading</a>
+        </div>
+        <div class="hero-illustration">
+            <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" aria-label="Reading illustration">
+                <!-- Concentric circles with reading lines pattern -->
+                <circle cx="200" cy="150" r="140" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+                <circle cx="200" cy="150" r="100" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                <circle cx="200" cy="150" r="60" fill="none" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+
+                <!-- Reading lines radiating pattern -->
+                <line x1="200" y1="30" x2="200" y2="60" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+                <line x1="200" y1="240" x2="200" y2="270" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+                <line x1="80" y1="150" x2="110" y2="150" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+                <line x1="290" y1="150" x2="320" y2="150" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+
+                <!-- Page-like shapes -->
+                <rect x="140" y="100" width="120" height="100" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5" rx="4"/>
+                <line x1="155" y1="115" x2="325" y2="115" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="155" y1="130" x2="325" y2="130" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="155" y1="145" x2="325" y2="145" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="155" y1="160" x2="325" y2="160" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                <line x1="155" y1="175" x2="305" y2="175" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+            </svg>
+        </div>
+    </header>
+
+    <!-- Trust Strip -->
+    <section class="trust-strip reveal">
+        <div class="trust-item">
+            <strong>Formats</strong>
+            <span>PDF · DOCX · MD · TXT</span>
+        </div>
+        <div class="trust-item">
+            <strong>Voices</strong>
+            <span>Natural multi-language TTS</span>
+        </div>
+        <div class="trust-item">
+            <strong>Speed</strong>
+            <span>0.75x – 1.5x playback</span>
+        </div>
+    </section>
+
+    <!-- Features Section (Dark) -->
+    <section class="dark-section">
+        <div class="features-section">
+            <h2 class="section-title reveal">Why 12 Reader?</h2>
+            <div class="features-grid">
+                <div class="feature-card reveal">
+                    <div class="feature-icon">📄</div>
+                    <h3>Any Format</h3>
+                    <p>PDFs keep real page layout. DOCX stays formatted. Markdown renders cleanly. TXT displays as readable paragraphs.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🎵</div>
+                    <h3>Natural Voices</h3>
+                    <p>Multiple languages and accents powered by Azure Cognitive Services with adjustable speed and emotional tone.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Instant Streaming</h3>
+                    <p>Audio streams in real-time as you click. No waiting for full file rendering. Progressive audio delivery.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">✨</div>
+                    <h3>Smart Highlighting</h3>
+                    <p>Words highlight in burnt orange as they're spoken. Full sentences in golden yellow. Follow along effortlessly.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-it-works">
+        <h2 class="section-title reveal">How It Works</h2>
+        <div class="steps-container">
+            <div class="step reveal">
+                <div class="step-number">1</div>
+                <h3>Upload</h3>
+                <p>Choose any document from your computer. Formats: PDF, DOCX, Markdown, or plain text.</p>
+            </div>
+            <div class="step reveal">
+                <div class="step-number">2</div>
+                <h3>Click</h3>
+                <p>Click anywhere in the rendered document to start reading from that exact point.</p>
+            </div>
+            <div class="step reveal">
+                <div class="step-number">3</div>
+                <h3>Listen</h3>
+                <p>Audio streams instantly with word-by-word highlighting and automatic scroll tracking.</p>
+            </div>
+            <div class="step reveal">
+                <div class="step-number">4</div>
+                <h3>Control</h3>
+                <p>Adjust voice, speed, pause anytime. Use keyboard shortcuts for hands-free control.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Reader Preview Section -->
+    <section class="reader-preview">
+        <div class="reveal">
+            <h2 class="section-title">Everything You Need</h2>
+            <div class="preview-mockup">
+                <div>
+                    <p style="margin: 0; color: #6f6558; font-size: 1rem;">Rich reader interface with progress bar, keyboard shortcuts,</p>
+                    <p style="margin: 4px 0 0; color: #6f6558; font-size: 1rem;">and intelligent voice controls. Go to /reader to experience it.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Newsletter Section -->
+    <section class="newsletter-section reveal">
+        <div class="newsletter-content">
+            <h2>Stay in the Loop</h2>
+            <p>Get updates when we add new features, improve performance, and discover reading tips.</p>
+            <form class="newsletter-form" onsubmit="handleNewsletterSubmit(event)">
+                <input type="email" placeholder="you@example.com" required>
+                <button type="submit">Subscribe</button>
+            </form>
+            <p class="newsletter-note">We respect your privacy. Unsubscribe anytime.</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div>
+                <p class="footer-tagline">Read More. Read Smarter.</p>
+                <p>&copy; 2026 12 Reader. Designed for better reading experiences.</p>
+            </div>
+            <div class="social-links">
+                <a href="#twitter">Twitter</a>
+                <a href="#github">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/landing.js') }}"></script>
+</body>
+</html>

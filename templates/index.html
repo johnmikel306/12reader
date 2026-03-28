@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Reader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/web/pdf_viewer.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <nav class="reader-nav">
+            <a href="/" class="nav-home">← Back to Home</a>
+        </nav>
+        <header class="hero">
+            <div>
+                <p class="eyebrow">Streaming read aloud</p>
+                <h1>Upload a document. Click anywhere. Start reading instantly.</h1>
+                <p class="hero-copy">PDF keeps its real page layout. DOCX stays formatted. Markdown is rendered cleanly without the raw symbols. TXT is displayed as readable lines and paragraphs.</p>
+            </div>
+        </header>
+
+        <section class="control-panel">
+            <div class="control-row upload-row">
+                <label class="file-picker">
+                    <span>Choose a file</span>
+                    <input id="file-input" type="file" accept=".pdf,.docx,.md,.markdown,.txt">
+                </label>
+                <p class="helper-text">Supported: PDF, DOCX, MD, TXT. Click rendered text to jump the reader.</p>
+            </div>
+
+            <div class="control-row settings-row">
+                <label class="field">
+                    <span>Voice</span>
+                    <select id="voice-select"></select>
+                </label>
+                <label class="field field-small">
+                    <span>Speed</span>
+                    <select id="speed-select">
+                        <option value="-25%">0.75x</option>
+                        <option value="+0%" selected>1.0x</option>
+                        <option value="+25%">1.25x</option>
+                        <option value="+50%">1.5x</option>
+                    </select>
+                </label>
+                <div class="button-row">
+                    <button id="play-from-start-btn" type="button">Play from start</button>
+                    <button id="pause-btn" type="button">Pause</button>
+                    <button id="resume-btn" type="button">Resume</button>
+                    <button id="stop-btn" type="button" class="button-muted">Stop</button>
+                </div>
+            </div>
+
+            <div class="kbd-hints" id="kbd-hints" style="display: none;">
+                <span><kbd>Space</kbd> Pause/Resume</span>
+                <span><kbd>Esc</kbd> Stop</span>
+                <span><kbd>[</kbd><kbd>]</kbd> Previous/Next Sentence</span>
+            </div>
+
+            <div class="status-row">
+                <div>
+                    <p id="status-text" class="status-text" data-state="ready">Load a document to begin.</p>
+                    <p id="document-meta" class="document-meta"></p>
+                </div>
+                <div id="loading-indicator" class="loading-indicator hidden">Working...</div>
+            </div>
+        </section>
+
+        <div class="audio-progress-bar" id="audio-progress-bar" style="display: none;">
+            <div class="progress-track">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-meta">
+                <span id="progress-time">0:00</span>
+                <span id="progress-label">Ready</span>
+            </div>
+        </div>
+
+        <main class="reader-layout">
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">📖</button>
+            <aside class="reader-notes" id="reader-notes">
+                <h2>How it works</h2>
+                <ul>
+                    <li>Upload a file and wait for the viewer to finish building.</li>
+                    <li>Click a sentence or paragraph to start reading from there.</li>
+                    <li>The current word and sentence stay highlighted while audio streams.</li>
+                </ul>
+            </aside>
+
+            <section class="viewer-panel">
+                <div id="viewer-scroll-area" class="viewer-scroll-area">
+                    <div id="document-viewer" class="document-viewer">
+                        <div class="empty-state">
+                            <h2>No document loaded</h2>
+                            <p>Your uploaded file will render here in its own structure.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <audio id="audio-player" preload="none"></audio>
+
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/web/pdf_viewer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx-preview@0.3.6/dist/docx-preview.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
