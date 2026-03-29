@@ -2,13 +2,15 @@
     const audio = document.getElementById("player");
     const state = {
         tabId: null,
+        sessionId: null,
         sessionToken: 0,
         startOffset: 0,
+        currentOffset: 0,
         events: [],
         currentEventIndex: -1,
         lastProgressKey: "",
         eventSource: null,
-        syncFrame: null,
+        progressIntervalId: null,
         suppressPlaybackEvents: false
     };
 
@@ -27,26 +29,33 @@
         if (state.suppressPlaybackEvents) {
             return;
         }
-        startSyncLoop();
+
+        startProgressTracking();
         void sendStatus("play");
     });
 
     audio.addEventListener("pause", () => {
-        stopSyncLoop();
+        stopProgressTracking();
         if (state.suppressPlaybackEvents || audio.ended) {
             return;
         }
+
         void sendStatus("pause");
     });
 
     audio.addEventListener("ended", () => {
-        stopSyncLoop();
+        stopProgressTracking();
+        state.currentOffset = Math.max(state.currentOffset, state.startOffset);
         void sendStatus("ended");
     });
 
     audio.addEventListener("error", () => {
-        stopSyncLoop();
+        stopProgressTracking();
         void sendStatus("error", "Audio stream failed.");
+    });
+
+    audio.addEventListener("timeupdate", () => {
+        sendProgressIfNeeded();
     });
 
     async function handleMessage(message) {
@@ -73,6 +82,7 @@
                 if (state.sessionToken !== message.sessionToken || !audio.src) {
                     throw new Error("No prepared audio stream is available to resume.");
                 }
+
                 await audio.play();
                 return {};
 
@@ -81,6 +91,9 @@
                     await clearSession();
                 }
                 return {};
+
+            case "OFFSCREEN_GET_STATE":
+                return { state: getSerializableState() };
 
             default:
                 return {};
@@ -91,8 +104,10 @@
         await clearSession();
 
         state.tabId = message.tabId;
+        state.sessionId = message.sessionId;
         state.sessionToken = message.sessionToken;
         state.startOffset = Number(message.startOffset) || 0;
+        state.currentOffset = state.startOffset;
         state.events = [];
         state.currentEventIndex = -1;
         state.lastProgressKey = "";
@@ -106,9 +121,10 @@
 
         if (message.autoplay) {
             await audio.play();
-        } else {
-            await sendStatus("ready");
+            return;
         }
+
+        await sendStatus("ready");
     }
 
     function connectEventStream(eventsUrl, sessionToken) {
@@ -122,6 +138,7 @@
 
             try {
                 state.events.push(JSON.parse(event.data));
+                sendProgressIfNeeded();
             } catch (error) {
                 void sendStatus("error", "Timing data could not be parsed.");
             }
@@ -143,7 +160,7 @@
 
     async function clearSession() {
         state.suppressPlaybackEvents = true;
-        stopSyncLoop();
+        stopProgressTracking();
 
         if (state.eventSource) {
             state.eventSource.close();
@@ -156,6 +173,11 @@
         audio.playbackRate = 1;
         audio.defaultPlaybackRate = 1;
 
+        state.tabId = null;
+        state.sessionId = null;
+        state.sessionToken = 0;
+        state.startOffset = 0;
+        state.currentOffset = 0;
         state.events = [];
         state.currentEventIndex = -1;
         state.lastProgressKey = "";
@@ -164,25 +186,16 @@
         state.suppressPlaybackEvents = false;
     }
 
-    function startSyncLoop() {
-        stopSyncLoop();
-
-        const tick = () => {
-            if (audio.paused || audio.ended) {
-                return;
-            }
-
-            sendProgressIfNeeded();
-            state.syncFrame = window.requestAnimationFrame(tick);
-        };
-
-        state.syncFrame = window.requestAnimationFrame(tick);
+    function startProgressTracking() {
+        stopProgressTracking();
+        sendProgressIfNeeded();
+        state.progressIntervalId = window.setInterval(sendProgressIfNeeded, 120);
     }
 
-    function stopSyncLoop() {
-        if (state.syncFrame) {
-            window.cancelAnimationFrame(state.syncFrame);
-            state.syncFrame = null;
+    function stopProgressTracking() {
+        if (state.progressIntervalId) {
+            window.clearInterval(state.progressIntervalId);
+            state.progressIntervalId = null;
         }
     }
 
@@ -204,9 +217,12 @@
         }
 
         state.lastProgressKey = progressKey;
+        state.currentOffset = resumeOffset;
+
         void chrome.runtime.sendMessage({
             type: "OFFSCREEN_PROGRESS",
             tabId: state.tabId,
+            sessionId: state.sessionId,
             sessionToken: state.sessionToken,
             highlightOffset,
             resumeOffset
@@ -243,14 +259,31 @@
         const absoluteStart = startOffset + event.char_start;
         const absoluteEnd = startOffset + event.char_end;
         const duration = Math.max(0, event.time_end - event.time_start);
-        const threshold = duration > 0 ? event.time_start + duration * 0.55 : event.time_start + 0.12;
+        const threshold = duration > 0
+            ? event.time_start + duration * 0.55
+            : event.time_start + 0.12;
+
         return currentTime >= threshold ? absoluteEnd : absoluteStart;
+    }
+
+    function getSerializableState() {
+        return {
+            tabId: state.tabId,
+            sessionId: state.sessionId,
+            sessionToken: state.sessionToken,
+            startOffset: state.startOffset,
+            currentOffset: state.currentOffset,
+            isPlaying: Boolean(audio.src && !audio.paused && !audio.ended),
+            isPaused: Boolean(audio.src && audio.paused && !audio.ended),
+            hasAudio: Boolean(audio.src)
+        };
     }
 
     async function sendStatus(status, error) {
         await chrome.runtime.sendMessage({
             type: "OFFSCREEN_STATUS",
             tabId: state.tabId,
+            sessionId: state.sessionId,
             sessionToken: state.sessionToken,
             status,
             error: error || ""

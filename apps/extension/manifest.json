@@ -15,6 +15,22 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "read-from-top": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Start reading the current page from the top"
+    },
+    "toggle-playback": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Pause or resume current page reading"
+    }
+  },
   "action": {
     "default_title": "12reader",
     "default_popup": "popup.html"

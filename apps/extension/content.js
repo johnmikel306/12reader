@@ -14,6 +14,10 @@
     const OVERLAY_ID = "twelve-reader-overlay";
     const STYLE_ID = "twelve-reader-style";
     const TOAST_ID = "twelve-reader-toast";
+    const CONTROLLER_ID = "twelve-reader-controller";
+    const CONTROLLER_STATUS_ID = "twelve-reader-controller-status";
+    const CONTROLLER_TOGGLE_ID = "twelve-reader-controller-toggle";
+    const CONTROLLER_STOP_ID = "twelve-reader-controller-stop";
 
     const state = {
         clickMode: false,
@@ -21,6 +25,7 @@
         dirty: true,
         activeSentenceRange: null,
         activeWordRange: null,
+        readerState: null,
         mutationObserver: null,
         resizeScheduled: false
     };
@@ -36,6 +41,7 @@
             if (response && response.ok && response.state) {
                 state.clickMode = Boolean(response.state.clickMode);
                 updateClickModeMarker();
+                applyReaderState(response.state);
             }
         } catch (error) {
             // Ignore when the background worker is temporarily unavailable.
@@ -73,13 +79,21 @@
                 showToast(state.clickMode ? "12reader click-to-read enabled" : "12reader click-to-read disabled");
                 return { ok: true };
 
+            case "READER_STATE_UPDATED":
+                applyReaderState(message.state || null);
+                return { ok: true };
+
             case "READER_STARTED":
                 buildOrReuseReadingMap();
                 return { ok: true };
 
             case "READING_PROGRESS":
                 buildOrReuseReadingMap();
-                highlightOffset(message.absoluteOffset || 0);
+                if (!highlightOffset(message.absoluteOffset || 0)) {
+                    state.dirty = true;
+                    buildOrReuseReadingMap();
+                    highlightOffset(message.absoluteOffset || 0);
+                }
                 return { ok: true };
 
             case "READING_DONE":
@@ -89,6 +103,7 @@
 
             case "CLEAR_READER":
                 clearHighlights();
+                hideFloatingController();
                 return { ok: true };
 
             default:
@@ -97,6 +112,8 @@
     }
 
     async function onDocumentClick(event) {
+        const targetElement = event.target instanceof Element ? event.target : event.target?.parentElement;
+
         if (!state.clickMode) {
             return;
         }
@@ -105,11 +122,15 @@
             return;
         }
 
-        if (event.target.closest(`#${OVERLAY_ID}`)) {
+        if (!targetElement) {
             return;
         }
 
-        if (event.target.closest("input, textarea, select, button")) {
+        if (targetElement.closest(`#${OVERLAY_ID}`) || targetElement.closest(`#${CONTROLLER_ID}`)) {
+            return;
+        }
+
+        if (targetElement.closest("input, textarea, select, button")) {
             return;
         }
 
@@ -118,12 +139,12 @@
             return;
         }
 
-        const offset = getOffsetFromPoint(event.clientX, event.clientY, event.target, readingMap);
+        const offset = getOffsetFromPoint(event.clientX, event.clientY, targetElement, readingMap);
         if (offset == null) {
             return;
         }
 
-        if (event.target.closest("a")) {
+        if (targetElement.closest("a")) {
             event.preventDefault();
         }
         event.preventDefault();
@@ -550,36 +571,41 @@
 
         state.activeWordRange = wordRange;
         state.activeSentenceRange = sentenceRange;
-        redrawHighlights();
+        const drewHighlights = redrawHighlights();
         scrollSentenceIntoView(sentenceRange, readingMap);
+        return drewHighlights;
     }
 
     function redrawHighlights() {
         clearOverlayBlocks();
 
         if (!state.activeSentenceRange && !state.activeWordRange) {
-            return;
+            return false;
         }
 
         positionOverlay();
         const readingMap = buildOrReuseReadingMap();
+        let drawnBlocks = 0;
 
         if (state.activeSentenceRange) {
-            drawRangeRects(readingMap, state.activeSentenceRange, "twelve-reader-highlight sentence");
+            drawnBlocks += drawRangeRects(readingMap, state.activeSentenceRange, "twelve-reader-highlight sentence");
         }
         if (state.activeWordRange) {
-            drawRangeRects(readingMap, state.activeWordRange, "twelve-reader-highlight word");
+            drawnBlocks += drawRangeRects(readingMap, state.activeWordRange, "twelve-reader-highlight word");
         }
+
+        return drawnBlocks > 0;
     }
 
     function drawRangeRects(readingMap, rangeLike, className) {
         const range = createDomRange(readingMap.runs, rangeLike.start, rangeLike.end);
         if (!range) {
-            return;
+            return 0;
         }
 
         const overlay = ensureOverlay();
         const fragment = document.createDocumentFragment();
+        let drawnBlocks = 0;
         Array.from(range.getClientRects()).forEach((rect) => {
             if (rect.width < 1 || rect.height < 1) {
                 return;
@@ -592,9 +618,11 @@
             block.style.width = `${rect.width}px`;
             block.style.height = `${rect.height}px`;
             fragment.appendChild(block);
+            drawnBlocks += 1;
         });
 
         overlay.appendChild(fragment);
+        return drawnBlocks;
     }
 
     function createDomRange(runs, start, end) {
@@ -738,6 +766,97 @@
         document.documentElement.toggleAttribute("data-twelve-reader-click-mode", state.clickMode);
     }
 
+    function applyReaderState(readerState) {
+        state.readerState = readerState || null;
+        updateFloatingController(readerState || null);
+    }
+
+    function updateFloatingController(readerState) {
+        const shouldShow = Boolean(readerState && (readerState.isSpeaking || readerState.isPaused || readerState.isActiveTab));
+        if (!shouldShow) {
+            hideFloatingController();
+            return;
+        }
+
+        const controller = ensureFloatingController();
+        const status = controller.querySelector(`#${CONTROLLER_STATUS_ID}`);
+        const toggleButton = controller.querySelector(`#${CONTROLLER_TOGGLE_ID}`);
+
+        if (readerState.isSpeaking) {
+            status.textContent = "Reading aloud";
+            toggleButton.textContent = "Pause";
+            toggleButton.disabled = false;
+        } else if (readerState.isPaused) {
+            status.textContent = "Paused";
+            toggleButton.textContent = "Resume";
+            toggleButton.disabled = false;
+        } else {
+            status.textContent = "Preparing audio...";
+            toggleButton.textContent = "Pause";
+            toggleButton.disabled = true;
+        }
+
+        controller.hidden = false;
+        controller.dataset.visible = "true";
+    }
+
+    function hideFloatingController() {
+        const controller = document.getElementById(CONTROLLER_ID);
+        if (!controller) {
+            return;
+        }
+
+        controller.hidden = true;
+        controller.dataset.visible = "false";
+    }
+
+    function ensureFloatingController() {
+        let controller = document.getElementById(CONTROLLER_ID);
+        if (controller) {
+            return controller;
+        }
+
+        controller = document.createElement("div");
+        controller.id = CONTROLLER_ID;
+        controller.hidden = true;
+        controller.dataset.visible = "false";
+        controller.innerHTML = `
+            <div class="twelve-reader-controller__meta">
+                <span class="twelve-reader-controller__badge">12reader</span>
+                <span id="${CONTROLLER_STATUS_ID}" class="twelve-reader-controller__status">Reading aloud</span>
+            </div>
+            <div class="twelve-reader-controller__actions">
+                <button id="${CONTROLLER_TOGGLE_ID}" type="button">Pause</button>
+                <button id="${CONTROLLER_STOP_ID}" type="button">Stop</button>
+            </div>
+        `;
+
+        controller.querySelector(`#${CONTROLLER_TOGGLE_ID}`).addEventListener("click", async () => {
+            try {
+                const response = await chrome.runtime.sendMessage({ type: "FLOATING_TOGGLE_PLAYBACK" });
+                if (!response || !response.ok) {
+                    throw new Error(response?.error || "Playback control failed.");
+                }
+            } catch (error) {
+                showToast(error.message || "Playback control failed.");
+            }
+        });
+
+        controller.querySelector(`#${CONTROLLER_STOP_ID}`).addEventListener("click", async () => {
+            try {
+                const response = await chrome.runtime.sendMessage({ type: "FLOATING_STOP_READING" });
+                if (!response || !response.ok) {
+                    throw new Error(response?.error || "Stop failed.");
+                }
+            } catch (error) {
+                showToast(error.message || "Stop failed.");
+            }
+        });
+
+        document.documentElement.appendChild(controller);
+        return controller;
+    }
+
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) {
             return;
@@ -767,10 +886,83 @@
                 background: rgba(234, 94, 42, 0.38);
             }
 
-            #${TOAST_ID} {
+            #${CONTROLLER_ID} {
                 position: fixed;
                 right: 20px;
                 bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                min-width: 220px;
+                max-width: min(360px, calc(100vw - 24px));
+                padding: 12px 14px;
+                border-radius: 18px;
+                background: rgba(17, 24, 39, 0.94);
+                color: #ffffff;
+                box-shadow: 0 18px 45px rgba(15, 23, 42, 0.28);
+                z-index: 2147483647;
+                opacity: 0;
+                transform: translateY(10px);
+                transition: opacity 180ms ease, transform 180ms ease;
+                font: 500 13px/1.4 Arial, sans-serif;
+            }
+
+            #${CONTROLLER_ID}[data-visible="true"] {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            .twelve-reader-controller__meta {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                min-width: 0;
+                flex: 1;
+            }
+
+            .twelve-reader-controller__badge {
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: rgba(136, 217, 218, 0.95);
+            }
+
+            .twelve-reader-controller__status {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .twelve-reader-controller__actions {
+                display: flex;
+                gap: 8px;
+            }
+
+            .twelve-reader-controller__actions button {
+                min-height: 34px;
+                padding: 0 12px;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+                font: 600 12px/1 Arial, sans-serif;
+                cursor: pointer;
+            }
+
+            .twelve-reader-controller__actions button:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.16);
+            }
+
+            .twelve-reader-controller__actions button:disabled {
+                opacity: 0.55;
+                cursor: default;
+            }
+
+            #${TOAST_ID} {
+                position: fixed;
+                right: 20px;
+                bottom: 92px;
                 max-width: 320px;
                 padding: 10px 14px;
                 border-radius: 999px;

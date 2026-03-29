@@ -1,5 +1,7 @@
 const BACKEND_BASE_URL = "http://127.0.0.1:5000";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
+const ACTIVE_TAB_STORAGE_KEY = "runtime:activeSpeechTabId";
+const TAB_STATE_STORAGE_PREFIX = "runtime:tabState:";
 const DEFAULT_SETTINGS = {
     voiceName: "en-US-AriaNeural",
     rate: "+0%",
@@ -13,8 +15,8 @@ let offscreenCreation = null;
 
 
 chrome.runtime.onInstalled.addListener(async () => {
-    const stored = await storageGet(DEFAULT_SETTINGS);
-    await storageSet({ ...DEFAULT_SETTINGS, ...stored });
+    const stored = await storageLocalGet(DEFAULT_SETTINGS);
+    await storageLocalSet({ ...DEFAULT_SETTINGS, ...stored });
 });
 
 
@@ -35,6 +37,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 
+chrome.commands.onCommand.addListener((command) => {
+    void handleCommand(command).catch((error) => {
+        console.error("12reader command failed:", error);
+    });
+});
+
+
 async function handleMessage(message, sender) {
     const tabId = message.tabId || sender.tab?.id;
 
@@ -43,12 +52,14 @@ async function handleMessage(message, sender) {
             if (!tabId) {
                 return { state: null };
             }
+            await syncTabStateWithOffscreen(tabId);
             return { state: await getSerializableState(tabId) };
 
         case "GET_TAB_STATE":
             if (!tabId) {
                 throw new Error("No active tab available.");
             }
+            await syncTabStateWithOffscreen(tabId);
             return { state: await getSerializableState(tabId) };
 
         case "GET_BACKEND_VOICES":
@@ -98,6 +109,20 @@ async function handleMessage(message, sender) {
             await updateSettings(tabId, message.settings || {});
             return { state: await getSerializableState(tabId) };
 
+        case "FLOATING_TOGGLE_PLAYBACK":
+            if (!tabId) {
+                throw new Error("No active tab available.");
+            }
+            await togglePlayback(tabId);
+            return { state: await getSerializableState(tabId) };
+
+        case "FLOATING_STOP_READING":
+            if (!tabId) {
+                throw new Error("No active tab available.");
+            }
+            await stopSpeech(tabId, { clearHighlights: true, resetOffset: true });
+            return { state: await getSerializableState(tabId) };
+
         case "OFFSCREEN_PROGRESS":
             await handleOffscreenProgress(message);
             return {};
@@ -112,8 +137,53 @@ async function handleMessage(message, sender) {
 }
 
 
+async function handleCommand(command) {
+    const tab = await getActiveTab();
+    if (!tab || !tab.id) {
+        return;
+    }
+
+    if (command === "read-from-top") {
+        await refreshDocumentText(tab.id);
+        await startSpeech(tab.id, 0, { autoplay: true });
+        return;
+    }
+
+    if (command === "toggle-playback") {
+        await togglePlayback(tab.id);
+    }
+}
+
+
+async function togglePlayback(tabId) {
+    await syncTabStateWithOffscreen(tabId);
+    const state = await ensureTabState(tabId);
+
+    if (state.sessionId && state.isSpeaking) {
+        await pauseSpeech(tabId);
+        return;
+    }
+
+    if (state.sessionId && state.isPaused) {
+        await resumeSpeech(tabId);
+        return;
+    }
+
+    await refreshDocumentText(tabId);
+    await startSpeech(tabId, 0, { autoplay: true });
+}
+
+
+async function getActiveTab() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs[0] || null;
+}
+
+
 async function getSerializableState(tabId) {
     const state = await ensureTabState(tabId);
+    await ensureActiveSpeechTabId();
+
     return {
         tabId,
         backendBaseUrl: BACKEND_BASE_URL,
@@ -132,63 +202,69 @@ async function getSerializableState(tabId) {
 
 
 async function ensureTabState(tabId) {
-    if (!tabStates.has(tabId)) {
-        tabStates.set(tabId, {
-            settings: await storageGet(DEFAULT_SETTINGS),
-            text: "",
-            currentOffset: 0,
-            sessionId: null,
-            sessionToken: 0,
-            sessionStartOffset: 0,
-            isSpeaking: false,
-            isPaused: false,
-            pendingRestart: false,
-            lastError: ""
-        });
+    if (tabStates.has(tabId)) {
+        return tabStates.get(tabId);
     }
 
-    const state = tabStates.get(tabId);
-    if (!state.settings) {
-        state.settings = await storageGet(DEFAULT_SETTINGS);
-    }
+    const settings = await storageLocalGet(DEFAULT_SETTINGS);
+    const stored = await loadPersistedTabState(tabId);
+    const state = stored
+        ? hydrateStoredState(stored, settings)
+        : createInitialState(settings);
+
+    tabStates.set(tabId, state);
     return state;
 }
 
 
-async function cleanupRemovedTab(tabId) {
-    const state = tabStates.get(tabId);
-    if (!state) {
-        return;
+async function ensureActiveSpeechTabId() {
+    if (activeSpeechTabId !== null) {
+        return activeSpeechTabId;
     }
 
-    if (state.sessionId) {
+    const stored = await storageSessionGet({ [ACTIVE_TAB_STORAGE_KEY]: null });
+    const nextTabId = stored[ACTIVE_TAB_STORAGE_KEY];
+    activeSpeechTabId = typeof nextTabId === "number" ? nextTabId : null;
+    return activeSpeechTabId;
+}
+
+
+async function cleanupRemovedTab(tabId) {
+    const state = await ensureTabState(tabId).catch(() => null);
+
+    if (state && state.sessionId) {
         void deleteBackendSession(state.sessionId);
     }
 
+    await ensureActiveSpeechTabId();
     if (activeSpeechTabId === tabId) {
         activeSpeechTabId = null;
+        await persistActiveSpeechTabId();
         await sendOptionalOffscreenMessage({
             target: "offscreen",
             type: "OFFSCREEN_STOP",
             tabId,
-            sessionToken: state.sessionToken + 1
+            sessionToken: state ? state.sessionToken + 1 : 0
         });
     }
 
     tabStates.delete(tabId);
+    await clearPersistedTabState(tabId);
 }
 
 
 async function updateSettings(tabId, incomingSettings) {
+    await syncTabStateWithOffscreen(tabId);
     const state = await ensureTabState(tabId);
-    const currentSettings = await storageGet(DEFAULT_SETTINGS);
+    const currentSettings = await storageLocalGet(DEFAULT_SETTINGS);
     const nextSettings = {
         ...currentSettings,
         ...sanitizeSettings(incomingSettings)
     };
 
-    await storageSet(nextSettings);
+    await storageLocalSet(nextSettings);
     state.settings = nextSettings;
+    await persistTabState(tabId, state);
 
     await sendOptionalMessageToTab(tabId, {
         type: "SET_CLICK_MODE",
@@ -198,7 +274,7 @@ async function updateSettings(tabId, incomingSettings) {
     const changedVoice = Object.prototype.hasOwnProperty.call(incomingSettings, "voiceName");
     const changedRate = Object.prototype.hasOwnProperty.call(incomingSettings, "rate");
 
-    if (state.text && state.sessionId && (changedVoice || changedRate)) {
+    if (state.sessionId && state.text && (changedVoice || changedRate)) {
         if (changedRate && state.isSpeaking) {
             await sendOptionalOffscreenMessage({
                 target: "offscreen",
@@ -232,6 +308,7 @@ async function setDocumentText(tabId, text) {
     state.text = text || "";
     state.currentOffset = clamp(state.currentOffset, 0, state.text.length);
     state.lastError = "";
+    await persistTabState(tabId, state);
 }
 
 
@@ -249,6 +326,7 @@ async function startSpeech(tabId, offset, options = {}) {
         throw new Error("Nothing left to read from this location.");
     }
 
+    await ensureActiveSpeechTabId();
     if (activeSpeechTabId !== null && activeSpeechTabId !== tabId) {
         await stopSpeech(activeSpeechTabId, { clearHighlights: true, resetOffset: false });
     }
@@ -274,13 +352,21 @@ async function startSpeech(tabId, offset, options = {}) {
     state.lastError = "";
     activeSpeechTabId = tabId;
 
+    await persistTabState(tabId, state);
+    await persistActiveSpeechTabId();
+
     try {
+        await sendOptionalMessageToTab(tabId, {
+            type: "READER_STARTED",
+            startOffset: session.start_offset
+        });
+
         await sendOffscreenMessage({
             target: "offscreen",
             type: "OFFSCREEN_START_SESSION",
             tabId,
-            sessionToken,
             sessionId: session.session_id,
+            sessionToken,
             startOffset: session.start_offset,
             audioUrl: absoluteBackendUrl(session.audio_url),
             eventsUrl: absoluteBackendUrl(session.events_url),
@@ -295,6 +381,8 @@ async function startSpeech(tabId, offset, options = {}) {
         if (activeSpeechTabId === tabId) {
             activeSpeechTabId = null;
         }
+        await persistTabState(tabId, state);
+        await persistActiveSpeechTabId();
         void deleteBackendSession(session.session_id);
         await broadcastState(tabId);
         throw error;
@@ -309,12 +397,13 @@ async function startSpeech(tabId, offset, options = {}) {
 
 
 async function pauseSpeech(tabId) {
+    await syncTabStateWithOffscreen(tabId);
     const state = await ensureTabState(tabId);
-    if (activeSpeechTabId !== tabId || !state.sessionId) {
+    if (!state.sessionId) {
         return;
     }
 
-    await sendOptionalOffscreenMessage({
+    await sendOffscreenMessage({
         target: "offscreen",
         type: "OFFSCREEN_PAUSE",
         tabId,
@@ -323,17 +412,19 @@ async function pauseSpeech(tabId) {
 
     state.isSpeaking = false;
     state.isPaused = true;
+    await persistTabState(tabId, state);
     await broadcastState(tabId);
 }
 
 
 async function resumeSpeech(tabId) {
+    await syncTabStateWithOffscreen(tabId);
     const state = await ensureTabState(tabId);
     if (!state.text) {
         await refreshDocumentText(tabId);
     }
 
-    if (!state.sessionId || activeSpeechTabId !== tabId) {
+    if (!state.sessionId) {
         await startSpeech(tabId, state.currentOffset, { autoplay: true });
         return;
     }
@@ -354,19 +445,21 @@ async function resumeSpeech(tabId) {
     state.isPaused = false;
     state.isSpeaking = true;
     activeSpeechTabId = tabId;
+    await persistTabState(tabId, state);
+    await persistActiveSpeechTabId();
     await broadcastState(tabId);
 }
 
 
 async function stopSpeech(tabId, options = {}) {
+    await syncTabStateWithOffscreen(tabId);
     const { clearHighlights = true, resetOffset = false } = options;
     const state = await ensureTabState(tabId);
     const sessionId = state.sessionId;
 
     state.sessionToken += 1;
 
-    if (activeSpeechTabId === tabId) {
-        activeSpeechTabId = null;
+    if (sessionId || activeSpeechTabId === tabId) {
         await sendOptionalOffscreenMessage({
             target: "offscreen",
             type: "OFFSCREEN_STOP",
@@ -379,6 +472,10 @@ async function stopSpeech(tabId, options = {}) {
         void deleteBackendSession(sessionId);
     }
 
+    if (activeSpeechTabId === tabId) {
+        activeSpeechTabId = null;
+    }
+
     state.sessionId = null;
     state.sessionStartOffset = 0;
     state.isSpeaking = false;
@@ -388,6 +485,9 @@ async function stopSpeech(tabId, options = {}) {
     if (resetOffset) {
         state.currentOffset = 0;
     }
+
+    await persistTabState(tabId, state);
+    await persistActiveSpeechTabId();
 
     if (clearHighlights) {
         await sendOptionalMessageToTab(tabId, { type: "CLEAR_READER" });
@@ -409,6 +509,7 @@ async function handleOffscreenProgress(message) {
     }
 
     state.currentOffset = normalizeResumeOffset(state.text, message.resumeOffset);
+    await persistTabState(tabId, state);
 
     await sendOptionalMessageToTab(tabId, {
         type: "READING_PROGRESS",
@@ -433,68 +534,97 @@ async function handleOffscreenStatus(message) {
             state.isSpeaking = true;
             state.isPaused = false;
             state.lastError = "";
-            await broadcastState(tabId);
-            return;
+            activeSpeechTabId = tabId;
+            break;
 
         case "pause":
             state.isSpeaking = false;
             state.isPaused = true;
-            await broadcastState(tabId);
-            return;
+            break;
 
         case "ready":
             state.isSpeaking = false;
             state.isPaused = true;
             state.lastError = "";
-            await broadcastState(tabId);
-            return;
+            activeSpeechTabId = tabId;
+            break;
 
         case "ended":
+            if (state.sessionId) {
+                void deleteBackendSession(state.sessionId);
+            }
             state.currentOffset = state.text.length;
             state.isSpeaking = false;
             state.isPaused = false;
             state.pendingRestart = false;
             state.sessionId = null;
+            state.sessionStartOffset = 0;
             if (activeSpeechTabId === tabId) {
                 activeSpeechTabId = null;
             }
             await sendOptionalMessageToTab(tabId, { type: "READING_DONE" });
-            await broadcastState(tabId);
-            return;
+            break;
 
         case "error":
+            if (state.sessionId) {
+                void deleteBackendSession(state.sessionId);
+            }
             state.isSpeaking = false;
             state.isPaused = false;
             state.pendingRestart = false;
             state.lastError = message.error || "Edge TTS playback failed.";
-            if (state.sessionId) {
-                void deleteBackendSession(state.sessionId);
-                state.sessionId = null;
-            }
+            state.sessionId = null;
+            state.sessionStartOffset = 0;
             if (activeSpeechTabId === tabId) {
                 activeSpeechTabId = null;
             }
             await sendOptionalMessageToTab(tabId, { type: "CLEAR_READER" });
-            await broadcastState(tabId);
-            return;
+            break;
 
         default:
             return;
     }
+
+    await persistTabState(tabId, state);
+    await persistActiveSpeechTabId();
+    await broadcastState(tabId);
+}
+
+
+async function syncTabStateWithOffscreen(tabId) {
+    await ensureActiveSpeechTabId();
+
+    const offscreenState = await getOffscreenState();
+    if (!offscreenState || !offscreenState.hasAudio) {
+        if (activeSpeechTabId !== null) {
+            activeSpeechTabId = null;
+            await persistActiveSpeechTabId();
+        }
+        return false;
+    }
+
+    activeSpeechTabId = offscreenState.tabId;
+    await persistActiveSpeechTabId();
+
+    if (offscreenState.tabId !== tabId) {
+        return false;
+    }
+
+    const state = await ensureTabState(tabId);
+    state.sessionId = offscreenState.sessionId || state.sessionId;
+    state.sessionToken = offscreenState.sessionToken;
+    state.sessionStartOffset = offscreenState.startOffset;
+    state.currentOffset = normalizeResumeOffset(state.text, offscreenState.currentOffset);
+    state.isSpeaking = Boolean(offscreenState.isPlaying);
+    state.isPaused = Boolean(offscreenState.isPaused);
+    await persistTabState(tabId, state);
+    return true;
 }
 
 
 async function ensureOffscreenDocument() {
-    const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
-
-    if ("getContexts" in chrome.runtime) {
-        const contexts = await chrome.runtime.getContexts({
-            contextTypes: ["OFFSCREEN_DOCUMENT"],
-            documentUrls: [offscreenUrl]
-        });
-        if (contexts.length) {
-            return;
-        }
+    if (await hasOffscreenDocument()) {
+        return;
     }
 
     if (offscreenCreation) {
@@ -513,6 +643,39 @@ async function ensureOffscreenDocument() {
     } finally {
         offscreenCreation = null;
     }
+}
+
+
+async function hasOffscreenDocument() {
+    const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+
+    if ("getContexts" in chrome.runtime) {
+        const contexts = await chrome.runtime.getContexts({
+            contextTypes: ["OFFSCREEN_DOCUMENT"],
+            documentUrls: [offscreenUrl]
+        });
+        return contexts.length > 0;
+    }
+
+    return false;
+}
+
+
+async function getOffscreenState() {
+    if (!(await hasOffscreenDocument())) {
+        return null;
+    }
+
+    const response = await sendOptionalOffscreenMessage({
+        target: "offscreen",
+        type: "OFFSCREEN_GET_STATE"
+    });
+
+    if (!response || !response.state) {
+        return null;
+    }
+
+    return response.state;
 }
 
 
@@ -571,9 +734,10 @@ function absoluteBackendUrl(path) {
 
 
 async function broadcastState(tabId) {
+    const state = await getSerializableState(tabId);
     const payload = {
         type: "STATE_UPDATED",
-        state: await getSerializableState(tabId)
+        state
     };
 
     try {
@@ -581,6 +745,11 @@ async function broadcastState(tabId) {
     } catch (error) {
         // Ignore when no popup is listening.
     }
+
+    await sendOptionalMessageToTab(tabId, {
+        type: "READER_STATE_UPDATED",
+        state
+    });
 }
 
 
@@ -624,15 +793,101 @@ async function sendOptionalOffscreenMessage(message) {
 }
 
 
+function createInitialState(settings) {
+    return {
+        settings,
+        text: "",
+        currentOffset: 0,
+        sessionId: null,
+        sessionToken: 0,
+        sessionStartOffset: 0,
+        isSpeaking: false,
+        isPaused: false,
+        pendingRestart: false,
+        lastError: ""
+    };
+}
+
+
+function hydrateStoredState(storedState, settings) {
+    return {
+        settings,
+        text: typeof storedState.text === "string" ? storedState.text : "",
+        currentOffset: Number.isFinite(storedState.currentOffset) ? storedState.currentOffset : 0,
+        sessionId: typeof storedState.sessionId === "string" ? storedState.sessionId : null,
+        sessionToken: Number.isFinite(storedState.sessionToken) ? storedState.sessionToken : 0,
+        sessionStartOffset: Number.isFinite(storedState.sessionStartOffset) ? storedState.sessionStartOffset : 0,
+        isSpeaking: Boolean(storedState.isSpeaking),
+        isPaused: Boolean(storedState.isPaused),
+        pendingRestart: Boolean(storedState.pendingRestart),
+        lastError: typeof storedState.lastError === "string" ? storedState.lastError : ""
+    };
+}
+
+
+function serializeTabState(state) {
+    return {
+        settings: state.settings,
+        text: state.text,
+        currentOffset: state.currentOffset,
+        sessionId: state.sessionId,
+        sessionToken: state.sessionToken,
+        sessionStartOffset: state.sessionStartOffset,
+        isSpeaking: state.isSpeaking,
+        isPaused: state.isPaused,
+        pendingRestart: state.pendingRestart,
+        lastError: state.lastError
+    };
+}
+
+
+async function loadPersistedTabState(tabId) {
+    const key = tabStateStorageKey(tabId);
+    const stored = await storageSessionGet({ [key]: null });
+    return stored[key] || null;
+}
+
+
+async function persistTabState(tabId, state) {
+    await storageSessionSet({
+        [tabStateStorageKey(tabId)]: serializeTabState(state)
+    });
+}
+
+
+async function clearPersistedTabState(tabId) {
+    await storageSessionRemove(tabStateStorageKey(tabId));
+}
+
+
+async function persistActiveSpeechTabId() {
+    if (activeSpeechTabId === null) {
+        await storageSessionRemove(ACTIVE_TAB_STORAGE_KEY);
+        return;
+    }
+
+    await storageSessionSet({ [ACTIVE_TAB_STORAGE_KEY]: activeSpeechTabId });
+}
+
+
+function tabStateStorageKey(tabId) {
+    return `${TAB_STATE_STORAGE_PREFIX}${tabId}`;
+}
+
+
 function sanitizeSettings(settings) {
     const next = {};
 
     if (Object.prototype.hasOwnProperty.call(settings, "voiceName")) {
-        next.voiceName = typeof settings.voiceName === "string" ? settings.voiceName : DEFAULT_SETTINGS.voiceName;
+        next.voiceName = typeof settings.voiceName === "string"
+            ? settings.voiceName
+            : DEFAULT_SETTINGS.voiceName;
     }
 
     if (Object.prototype.hasOwnProperty.call(settings, "rate")) {
-        const nextRate = typeof settings.rate === "string" ? settings.rate : DEFAULT_SETTINGS.rate;
+        const nextRate = typeof settings.rate === "string"
+            ? settings.rate
+            : DEFAULT_SETTINGS.rate;
         next.rate = VALID_RATES.has(nextRate) ? nextRate : DEFAULT_SETTINGS.rate;
     }
 
@@ -666,7 +921,7 @@ function rateToPlaybackRate(rate) {
 }
 
 
-function storageGet(defaults) {
+function storageLocalGet(defaults) {
     return new Promise((resolve) => {
         chrome.storage.local.get(defaults, (value) => {
             resolve(value);
@@ -675,9 +930,32 @@ function storageGet(defaults) {
 }
 
 
-function storageSet(values) {
+function storageLocalSet(values) {
     return new Promise((resolve) => {
         chrome.storage.local.set(values, () => resolve());
+    });
+}
+
+
+function storageSessionGet(defaults) {
+    return new Promise((resolve) => {
+        chrome.storage.session.get(defaults, (value) => {
+            resolve(value);
+        });
+    });
+}
+
+
+function storageSessionSet(values) {
+    return new Promise((resolve) => {
+        chrome.storage.session.set(values, () => resolve());
+    });
+}
+
+
+function storageSessionRemove(keys) {
+    return new Promise((resolve) => {
+        chrome.storage.session.remove(keys, () => resolve());
     });
 }
 
