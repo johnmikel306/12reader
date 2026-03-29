@@ -209,7 +209,7 @@ class BoundaryMatcher:
 @dataclass
 class ReadSession:
     session_id: str
-    document_id: str
+    document_id: Optional[str]
     text: str
     start_offset: int
     voice: str
@@ -293,6 +293,36 @@ class ReadSession:
                 self.condition.notify_all()
 
 
+def create_streaming_session(
+    source_text: str,
+    voice: str,
+    rate: str,
+    start_offset: int,
+    document_id: Optional[str] = None,
+) -> tuple[ReadSession, int]:
+    bounded_offset = max(0, min(int(start_offset), len(source_text)))
+    text_to_read = source_text[bounded_offset:]
+
+    if not text_to_read.strip():
+        raise ValueError("Nothing left to read from this position")
+
+    session_id = uuid.uuid4().hex
+    session = ReadSession(
+        session_id=session_id,
+        document_id=document_id,
+        text=text_to_read,
+        start_offset=bounded_offset,
+        voice=voice,
+        rate=rate,
+    )
+    session.start()
+
+    with sessions_lock:
+        read_sessions[session_id] = session
+
+    return session, bounded_offset
+
+
 @app.route("/")
 def landing():
     return render_template("landing.html")
@@ -310,6 +340,11 @@ def get_voices():
         return jsonify(voices)
     except Exception as exc:
         return jsonify({"error": f"Failed to load voices: {exc}"}), 500
+
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -414,29 +449,67 @@ def create_read_session():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    text_to_read = canonical_text[start_offset:]
-    if not text_to_read.strip():
-        return jsonify({"error": "Nothing left to read from this position"}), 400
-
-    session_id = uuid.uuid4().hex
-    session = ReadSession(
-        session_id=session_id,
-        document_id=document_id,
-        text=text_to_read,
-        start_offset=start_offset,
-        voice=voice,
-        rate=rate,
-    )
-    session.start()
-
-    with sessions_lock:
-        read_sessions[session_id] = session
+    try:
+        session, start_offset = create_streaming_session(
+            canonical_text,
+            voice=voice,
+            rate=rate,
+            start_offset=start_offset,
+            document_id=document_id,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     return jsonify(
         {
-            "session_id": session_id,
-            "audio_url": f"/api/read-sessions/{session_id}/audio",
-            "events_url": f"/api/read-sessions/{session_id}/events",
+            "session_id": session.session_id,
+            "audio_url": f"/api/read-sessions/{session.session_id}/audio",
+            "events_url": f"/api/read-sessions/{session.session_id}/events",
+            "start_offset": start_offset,
+            "voice": voice,
+            "rate": rate,
+        }
+    )
+
+
+@app.route("/api/page-read-sessions", methods=["POST"])
+def create_page_read_session():
+    cleanup_expired_entries()
+
+    data = request.get_json(silent=True) or {}
+    raw_text = data.get("text", "")
+    voice = data.get("voice") or DEFAULT_VOICE
+    start_offset = data.get("start_offset", 0)
+
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return jsonify({"error": "Readable page text is required"}), 400
+
+    try:
+        start_offset = max(0, min(int(start_offset), len(raw_text)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid start offset"}), 400
+
+    try:
+        rate = validate_rate(data.get("rate", "+0%"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        session, start_offset = create_streaming_session(
+            raw_text,
+            voice=voice,
+            rate=rate,
+            start_offset=start_offset,
+            document_id=None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(
+        {
+            "session_id": session.session_id,
+            "audio_url": f"/api/read-sessions/{session.session_id}/audio",
+            "events_url": f"/api/read-sessions/{session.session_id}/events",
             "start_offset": start_offset,
             "voice": voice,
             "rate": rate,

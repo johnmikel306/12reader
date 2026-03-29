@@ -24,7 +24,7 @@ The document reader web app.
 
 The Chrome extension for webpage reading.
 
-- reads regular webpages with `chrome.tts`
+- reads regular webpages through the local Flask backend with `edge-tts`
 - supports click-to-read when click mode is enabled
 - highlights the active sentence and word directly on the page
 - includes popup controls for voice, speed, pause, resume, and stop
@@ -117,6 +117,8 @@ Then open any normal webpage and use the popup to:
 - pause, resume, or stop
 - change voice and speed
 
+The extension expects the Flask app to be running locally at `http://127.0.0.1:5000`.
+
 ## Root scripts
 
 ```bash
@@ -129,10 +131,12 @@ npm run check:web
 - `GET /` - landing page
 - `GET /reader` - reader UI
 - `POST /api/upload` - upload a supported document
+- `GET /api/health` - simple backend health check
 - `GET /api/voices` - fetch available Edge TTS voices
 - `GET /api/documents/<document_id>/file` - serve the uploaded original file
 - `POST /api/documents/<document_id>/manifest` - save the frontend-built canonical text manifest
 - `POST /api/read-sessions` - create a streamed read session from an offset
+- `POST /api/page-read-sessions` - create a streamed webpage read session from raw text and an offset
 - `GET /api/read-sessions/<session_id>/audio` - stream MP3 audio
 - `GET /api/read-sessions/<session_id>/events` - stream word timing events via SSE
 - `DELETE /api/read-sessions/<session_id>` - stop a session
@@ -150,7 +154,7 @@ npm run check:web
 - works best on standard article/content pages
 - very dynamic apps, editors, or virtualized pages may need more extraction rules
 - `chrome://` pages and some protected pages do not allow content script behavior
-- webpage voice quality depends on the Chrome/OS voice stack available on the machine
+- the local Flask backend must be running for the extension to speak webpages
 
 ## Recommended next steps
 

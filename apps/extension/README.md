@@ -1,6 +1,6 @@
 # 12reader Chrome extension
 
-This extension reads webpages aloud with `chrome.tts`.
+This extension reads webpages aloud by calling the local 12reader Flask app, which streams `edge-tts` audio and timing data.
 
 ## What it does
 
@@ -8,6 +8,7 @@ This extension reads webpages aloud with `chrome.tts`.
 - supports click-to-read when click mode is enabled
 - highlights the current sentence and word on the page
 - supports pause, resume, stop, voice changes, and speed changes
+- uses the same Edge voice list exposed by the local web app backend
 
 ## Load it in Chrome
 
@@ -16,7 +17,17 @@ This extension reads webpages aloud with `chrome.tts`.
 3. Click Load unpacked
 4. Select `apps/extension`
 
+## Run the local backend first
+
+Before using the extension, start the Flask app from the repo root:
+
+```bash
+python app.py
+```
+
+The extension expects the backend at `http://127.0.0.1:5000`.
+
 ## Notes
 
 - this is the webpage-reading side of the 12reader monorepo
-- it uses `chrome.tts`, not the Flask `edge-tts` backend
+- it uses the Flask `edge-tts` backend, not `chrome.tts`

@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
   "name": "12reader Web Reader",
-  "description": "Read webpages aloud with click-to-read, live highlighting, and chrome.tts voices.",
+  "description": "Read webpages aloud with click-to-read, live highlighting, and Edge TTS streamed from the local Flask app.",
   "version": "0.1.0",
   "permissions": [
     "activeTab",
+    "offscreen",
     "scripting",
-    "storage",
-    "tts"
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"

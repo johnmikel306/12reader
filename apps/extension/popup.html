@@ -11,7 +11,7 @@
         <header class="popup-header">
             <p class="eyebrow">12reader extension</p>
             <h1>Read this webpage aloud</h1>
-            <p class="subcopy">Use chrome.tts voices with click-to-read and live highlighting.</p>
+            <p class="subcopy">Uses Edge TTS from your local 12reader app. Make sure `http://127.0.0.1:5000` is running.</p>
         </header>
 
         <section class="panel">
@@ -23,10 +23,10 @@
             <label class="field">
                 <span>Speed</span>
                 <select id="rate-select">
-                    <option value="0.75">0.75x</option>
-                    <option value="1" selected>1.0x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5">1.5x</option>
+                    <option value="-25%">0.75x</option>
+                    <option value="+0%" selected>1.0x</option>
+                    <option value="+25%">1.25x</option>
+                    <option value="+50%">1.5x</option>
                 </select>
             </label>
 

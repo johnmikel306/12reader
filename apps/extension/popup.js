@@ -21,6 +21,7 @@
         if (message.type !== "STATE_UPDATED" || !message.state || message.state.tabId !== activeTabId) {
             return;
         }
+
         renderState(message.state);
     });
 
@@ -33,8 +34,8 @@
         activeTabId = tab.id;
         elements.pageMeta.textContent = tab.title || tab.url || "Current tab";
 
-        await loadVoices();
         bindEvents();
+        await loadVoices();
         await refreshState();
     }
 
@@ -50,7 +51,7 @@
         });
 
         elements.rateSelect.addEventListener("change", async () => {
-            await updateSettings({ rate: Number(elements.rateSelect.value) });
+            await updateSettings({ rate: elements.rateSelect.value });
             setStatus("Speed updated.");
         });
 
@@ -61,22 +62,16 @@
     }
 
     async function loadVoices() {
-        const voices = await new Promise((resolve) => {
-            chrome.tts.getVoices((value) => resolve(value || []));
-        });
+        const response = await chrome.runtime.sendMessage({ type: "GET_BACKEND_VOICES" });
+        if (!response || !response.ok) {
+            throw new Error(response?.error || "Could not load Edge TTS voices from the local app.");
+        }
 
         elements.voiceSelect.innerHTML = "";
-
-        const defaultOption = document.createElement("option");
-        defaultOption.value = "";
-        defaultOption.textContent = "Browser default voice";
-        elements.voiceSelect.appendChild(defaultOption);
-
-        voices.forEach((voice) => {
+        response.voices.forEach((voice) => {
             const option = document.createElement("option");
-            option.value = voice.voiceName;
-            const locale = voice.lang ? ` (${voice.lang})` : "";
-            option.textContent = `${voice.voiceName}${locale}`;
+            option.value = voice.name;
+            option.textContent = `${voice.name} (${voice.locale})`;
             elements.voiceSelect.appendChild(option);
         });
     }
@@ -125,8 +120,8 @@
             return;
         }
 
-        elements.voiceSelect.value = state.voiceName || "";
-        elements.rateSelect.value = String(state.rate || 1);
+        elements.voiceSelect.value = state.voiceName || "en-US-AriaNeural";
+        elements.rateSelect.value = state.rate || "+0%";
         elements.clickModeToggle.checked = Boolean(state.clickMode);
 
         if (state.lastError) {
@@ -135,7 +130,7 @@
         }
 
         if (state.isSpeaking) {
-            setStatus("Reading this page now.");
+            setStatus("Reading this page now with Edge TTS.");
             return;
         }
 
