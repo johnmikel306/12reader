@@ -3,166 +3,268 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="12 Reader – Stream any document aloud with natural voices, instant highlighting, and seamless playback.">
-    <title>12 Reader – Stream Read Aloud</title>
+    <meta name="description" content="Cadence is a quiet reading workspace for documents and webpages with streamed voices, synchronized highlighting, and instant playback.">
+    <title>Cadence | Read In Rhythm</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Manrope:wght@200..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
 </head>
-<body>
-    <!-- Navigation -->
-    <nav class="nav-header">
-        <div class="nav-container">
-            <div class="logo">12 Reader</div>
-            <ul class="nav-links">
-                <li><a href="#features">Features</a></li>
-                <li><a href="#how-it-works">How It Works</a></li>
-            </ul>
-            <a href="/reader" class="nav-cta">Open Reader →</a>
+<body class="landing-page">
+    <nav class="topbar">
+        <div class="topbar-inner">
+            <a href="/" class="brand-mark">Cadence</a>
+            <div class="topbar-links">
+                <a href="#documents">Documents</a>
+                <a href="#webpages">Webpages</a>
+                <a href="#method">Method</a>
+            </div>
+            <a href="/reader" class="nav-action">Open Reader</a>
         </div>
     </nav>
 
-    <!-- Hero Section -->
-    <header class="hero-section reveal">
-        <div class="hero-content">
-            <h1 class="hero-title">Read Any Document Aloud</h1>
-            <p class="hero-subtitle">Upload PDFs, Word docs, markdown, or plain text. Click anywhere to start reading. Instant streaming audio with synchronized highlighting.</p>
-            <a href="/reader" class="cta-button">Start Reading</a>
-        </div>
-        <div class="hero-illustration">
-            <svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg" aria-label="Reading illustration">
-                <!-- Concentric circles with reading lines pattern -->
-                <circle cx="200" cy="150" r="140" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
-                <circle cx="200" cy="150" r="100" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
-                <circle cx="200" cy="150" r="60" fill="none" stroke="currentColor" stroke-width="2" opacity="0.6"/>
-
-                <!-- Reading lines radiating pattern -->
-                <line x1="200" y1="30" x2="200" y2="60" stroke="currentColor" stroke-width="2" opacity="0.4"/>
-                <line x1="200" y1="240" x2="200" y2="270" stroke="currentColor" stroke-width="2" opacity="0.4"/>
-                <line x1="80" y1="150" x2="110" y2="150" stroke="currentColor" stroke-width="2" opacity="0.4"/>
-                <line x1="290" y1="150" x2="320" y2="150" stroke="currentColor" stroke-width="2" opacity="0.4"/>
-
-                <!-- Page-like shapes -->
-                <rect x="140" y="100" width="120" height="100" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5" rx="4"/>
-                <line x1="155" y1="115" x2="325" y2="115" stroke="currentColor" stroke-width="1" opacity="0.3"/>
-                <line x1="155" y1="130" x2="325" y2="130" stroke="currentColor" stroke-width="1" opacity="0.3"/>
-                <line x1="155" y1="145" x2="325" y2="145" stroke="currentColor" stroke-width="1" opacity="0.3"/>
-                <line x1="155" y1="160" x2="325" y2="160" stroke="currentColor" stroke-width="1" opacity="0.3"/>
-                <line x1="155" y1="175" x2="305" y2="175" stroke="currentColor" stroke-width="1" opacity="0.3"/>
-            </svg>
-        </div>
-    </header>
-
-    <!-- Trust Strip -->
-    <section class="trust-strip reveal">
-        <div class="trust-item">
-            <strong>Formats</strong>
-            <span>PDF · DOCX · MD · TXT</span>
-        </div>
-        <div class="trust-item">
-            <strong>Voices</strong>
-            <span>Natural multi-language TTS</span>
-        </div>
-        <div class="trust-item">
-            <strong>Speed</strong>
-            <span>0.75x – 1.5x playback</span>
-        </div>
-    </section>
-
-    <!-- Features Section (Dark) -->
-    <section class="dark-section">
-        <div class="features-section">
-            <h2 class="section-title reveal">Why 12 Reader?</h2>
-            <div class="features-grid">
-                <div class="feature-card reveal">
-                    <div class="feature-icon">📄</div>
-                    <h3>Any Format</h3>
-                    <p>PDFs keep real page layout. DOCX stays formatted. Markdown renders cleanly. TXT displays as readable paragraphs.</p>
+    <main class="landing-main">
+        <section class="hero reveal">
+            <div class="hero-copy">
+                <p class="eyebrow">Streamed read aloud, preserved context</p>
+                <h1 class="hero-title">The quiet cadence of every page.</h1>
+                <p class="hero-subtitle">Cadence turns documents and webpages into a calmer reading-listening workflow. Start instantly, follow the spoken line, and move through dense material without losing the sentence you are in.</p>
+                <div class="hero-actions">
+                    <a href="/reader" class="primary-action">Open the reader</a>
+                    <a href="#method" class="secondary-action">See the method</a>
                 </div>
-                <div class="feature-card reveal">
-                    <div class="feature-icon">🎵</div>
-                    <h3>Natural Voices</h3>
-                    <p>Multiple languages and accents powered by Azure Cognitive Services with adjustable speed and emotional tone.</p>
-                </div>
-                <div class="feature-card reveal">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Instant Streaming</h3>
-                    <p>Audio streams in real-time as you click. No waiting for full file rendering. Progressive audio delivery.</p>
-                </div>
-                <div class="feature-card reveal">
-                    <div class="feature-icon">✨</div>
-                    <h3>Smart Highlighting</h3>
-                    <p>Words highlight in burnt orange as they're spoken. Full sentences in golden yellow. Follow along effortlessly.</p>
-                </div>
+                <dl class="hero-facts">
+                    <div>
+                        <dt>Formats</dt>
+                        <dd>PDF, DOCX, MD, TXT</dd>
+                    </div>
+                    <div>
+                        <dt>Mode</dt>
+                        <dd>Web app + Chrome extension</dd>
+                    </div>
+                    <div>
+                        <dt>Sync</dt>
+                        <dd>Sentence and word highlighting</dd>
+                    </div>
+                </dl>
             </div>
-        </div>
-    </section>
 
-    <!-- How It Works Section -->
-    <section id="how-it-works" class="how-it-works">
-        <h2 class="section-title reveal">How It Works</h2>
-        <div class="steps-container">
-            <div class="step reveal">
-                <div class="step-number">1</div>
-                <h3>Upload</h3>
-                <p>Choose any document from your computer. Formats: PDF, DOCX, Markdown, or plain text.</p>
-            </div>
-            <div class="step reveal">
-                <div class="step-number">2</div>
-                <h3>Click</h3>
-                <p>Click anywhere in the rendered document to start reading from that exact point.</p>
-            </div>
-            <div class="step reveal">
-                <div class="step-number">3</div>
-                <h3>Listen</h3>
-                <p>Audio streams instantly with word-by-word highlighting and automatic scroll tracking.</p>
-            </div>
-            <div class="step reveal">
-                <div class="step-number">4</div>
-                <h3>Control</h3>
-                <p>Adjust voice, speed, pause anytime. Use keyboard shortcuts for hands-free control.</p>
-            </div>
-        </div>
-    </section>
+            <div class="hero-stage" aria-label="Cadence product preview">
+                <div class="stage-shell">
+                    <div class="stage-topline">
+                        <span class="stage-kicker">Reader surface</span>
+                        <span class="stage-meta">Streaming voices + live follow along</span>
+                    </div>
+                    <div class="stage-layout">
+                        <aside class="stage-sidebar">
+                            <div>
+                                <p class="stage-label">Collection</p>
+                                <h2>Volume II</h2>
+                            </div>
+                            <div class="stage-navlist">
+                                <span class="stage-navitem active">Overview</span>
+                                <span class="stage-navitem">Metadata</span>
+                                <span class="stage-navitem">Annotations</span>
+                            </div>
+                            <div class="stage-sidebar-note">
+                                <p class="stage-label">Playback</p>
+                                <p>Hot-swap voice and speed without losing your place.</p>
+                            </div>
+                        </aside>
 
-    <!-- Reader Preview Section -->
-    <section class="reader-preview">
-        <div class="reveal">
-            <h2 class="section-title">Everything You Need</h2>
-            <div class="preview-mockup">
-                <div>
-                    <p style="margin: 0; color: #6f6558; font-size: 1rem;">Rich reader interface with progress bar, keyboard shortcuts,</p>
-                    <p style="margin: 4px 0 0; color: #6f6558; font-size: 1rem;">and intelligent voice controls. Go to /reader to experience it.</p>
+                        <div class="stage-reader">
+                            <p class="stage-volume">Section 04 - Annotated archive</p>
+                            <h3>The measured breath of long-form reading</h3>
+                            <div class="stage-rule"></div>
+                            <div class="stage-article">
+                                <p>Cadence keeps the original structure in view so the eye and the ear can move together through the same material.</p>
+                                <p><span class="stage-sentence">The current sentence settles into a soft field while <span class="stage-word">the spoken word</span> carries a darker weight inside it.</span> That contrast is what makes the interface feel calm instead of frantic.</p>
+                                <p>Whether the source is a document or a webpage, the system is built to preserve place, rhythm, and context.</p>
+                            </div>
+                            <div class="stage-player">
+                                <div class="stage-player-main">
+                                    <span class="material-symbols-outlined">pause</span>
+                                    <div>
+                                        <strong>Reading in progress</strong>
+                                        <span>1.25x - en-US-AriaNeural</span>
+                                    </div>
+                                </div>
+                                <div class="stage-progress">
+                                    <span>04:12</span>
+                                    <div class="stage-progress-line"><span></span></div>
+                                    <span>12:45</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stage-floating-note">
+                    <span class="material-symbols-outlined">keyboard_command_key</span>
+                    <div>
+                        <strong>Start from the page</strong>
+                        <span>Use the extension shortcut, then pause or resume in place.</span>
+                    </div>
+                </div>
+
+                <svg class="hero-line-art" viewBox="0 0 220 220" aria-hidden="true">
+                    <path d="M12 160C52 66 112 36 208 96"></path>
+                    <path d="M14 182C74 84 146 70 212 126"></path>
+                    <path d="M20 202C104 122 168 122 214 162"></path>
+                </svg>
+            </div>
+        </section>
+
+        <section class="manifesto reveal" id="method">
+            <div class="manifesto-intro">
+                <p class="eyebrow">A reading room, not a noisy dashboard</p>
+                <h2>Built for readers who want precision without clutter.</h2>
+            </div>
+            <div class="manifesto-body">
+                <p class="manifesto-copy">The product follows one core idea: visible structure should stay intact while the voice moves through it. That means streaming audio, exact offsets, live highlighting, and controls that feel close to the text instead of far away from it.</p>
+                <div class="principles-grid">
+                    <article class="principle-card">
+                        <span class="material-symbols-outlined">auto_stories</span>
+                        <h3>Original structure first</h3>
+                        <p>PDFs, DOCX files, markdown, and webpages stay readable in their own shapes instead of collapsing into one plain dump.</p>
+                    </article>
+                    <article class="principle-card">
+                        <span class="material-symbols-outlined">graphic_eq</span>
+                        <h3>Streaming over waiting</h3>
+                        <p>Cadence starts reading quickly, swaps settings live, and keeps the interface responsive instead of generating everything up front.</p>
+                    </article>
+                    <article class="principle-card">
+                        <span class="material-symbols-outlined">center_focus_strong</span>
+                        <h3>Follow the spoken line</h3>
+                        <p>Word and sentence highlights help the eye stay locked to the voice so dense text feels easier to hold.</p>
+                    </article>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Newsletter Section -->
-    <section class="newsletter-section reveal">
-        <div class="newsletter-content">
-            <h2>Stay in the Loop</h2>
-            <p>Get updates when we add new features, improve performance, and discover reading tips.</p>
-            <form class="newsletter-form" onsubmit="handleNewsletterSubmit(event)">
-                <input type="email" placeholder="you@example.com" required>
-                <button type="submit">Subscribe</button>
-            </form>
-            <p class="newsletter-note">We respect your privacy. Unsubscribe anytime.</p>
-        </div>
-    </section>
+        <section class="deposit-section reveal" id="documents">
+            <div class="deposit-shell">
+                <div class="deposit-copy">
+                    <p class="eyebrow">Deposit material</p>
+                    <h2>Bring documents into a listening workspace that still feels editorial.</h2>
+                    <p>Upload the source, keep the layout visible, and begin from any point in the text. Cadence is designed for long-form reading, research review, and study sessions where place matters.</p>
+                </div>
+                <div class="deposit-dropzone">
+                    <span class="material-symbols-outlined">upload_file</span>
+                    <h3>Drop your files into the archive</h3>
+                    <p>Supported formats: PDF, DOCX, MD, TXT. Once opened, every document can be streamed aloud with synchronized highlighting.</p>
+                    <div class="deposit-tags">
+                        <span>PDF</span>
+                        <span>DOCX</span>
+                        <span>Markdown</span>
+                        <span>TXT</span>
+                    </div>
+                    <a href="/reader" class="primary-action">Open workspace</a>
+                </div>
+            </div>
+        </section>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="footer-content">
+        <section class="bento-section">
+            <div class="bento-grid">
+                <article class="bento-card bento-card-large reveal">
+                    <p class="card-index">Section 01</p>
+                    <h3>A reading canvas designed for staying with the line.</h3>
+                    <p>The interface favors wide margins, strong hierarchy, and a restrained playback rail so the material remains the focus.</p>
+                    <div class="paper-preview">
+                        <div class="paper-page">
+                            <span class="paper-label">Document surface</span>
+                            <p>Sentence highlighting gives the eye a field to rest in while the active word becomes the precise point of attention.</p>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="bento-card bento-card-dark reveal" id="webpages">
+                    <span class="material-symbols-outlined">language</span>
+                    <h3>The browser extension keeps webpages inside the same rhythm.</h3>
+                    <p>Use shortcuts to read from the top, pause in place, or follow a passage directly from the page.</p>
+                    <div class="shortcut-list">
+                        <span>Ctrl/Cmd + Shift + U</span>
+                        <span>Start from top</span>
+                        <span>Ctrl/Cmd + Shift + P</span>
+                        <span>Pause / Resume</span>
+                    </div>
+                </article>
+
+                <article class="bento-card reveal">
+                    <p class="card-index">Section 02</p>
+                    <h3>Streaming, offsets, and voice controls.</h3>
+                    <p>Cadence couples audio with timing metadata so the UI knows not just what is playing, but exactly where you are.</p>
+                    <ul class="feature-list">
+                        <li>Edge TTS voice selection</li>
+                        <li>Speed hot-swaps from the live offset</li>
+                        <li>Click-to-read across documents and webpages</li>
+                    </ul>
+                </article>
+
+                <article class="bento-card bento-card-wire reveal">
+                    <p class="card-index">Signal path</p>
+                    <div class="signal-stack">
+                        <span>Visible text</span>
+                        <span>Canonical map</span>
+                        <span>Audio + timing</span>
+                        <span>Live highlight</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="steps-section reveal">
+            <div class="steps-header">
+                <p class="eyebrow">Method in four movements</p>
+                <h2>The system stays simple on purpose.</h2>
+            </div>
+            <div class="steps-grid">
+                <article class="step-card">
+                    <span>01</span>
+                    <h3>Open a source</h3>
+                    <p>Upload a document or open a webpage through the extension.</p>
+                </article>
+                <article class="step-card">
+                    <span>02</span>
+                    <h3>Build the map</h3>
+                    <p>The visible text becomes one canonical reading sequence with stable offsets.</p>
+                </article>
+                <article class="step-card">
+                    <span>03</span>
+                    <h3>Stream the voice</h3>
+                    <p>The backend starts audio and timing data without waiting for a full file to finish.</p>
+                </article>
+                <article class="step-card">
+                    <span>04</span>
+                    <h3>Follow along</h3>
+                    <p>The interface highlights the active sentence and word while keeping controls close at hand.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="cta-section reveal">
+            <p class="eyebrow">Begin the archive</p>
+            <h2>Bring long-form reading into Cadence.</h2>
+            <p>Open the reader, load a document, or continue through the Chrome extension when the page itself is the material.</p>
+            <div class="cta-actions">
+                <a href="/reader" class="primary-action">Start reading</a>
+                <a href="#webpages" class="secondary-action">See extension flow</a>
+            </div>
+        </section>
+    </main>
+
+    <footer class="landing-footer">
+        <div class="landing-footer-inner">
             <div>
-                <p class="footer-tagline">Read More. Read Smarter.</p>
-                <p>&copy; 2026 12 Reader. Designed for better reading experiences.</p>
+                <p class="footer-brand">Cadence</p>
+                <p class="footer-copy">A quieter interface for documents, webpages, and sustained attention.</p>
             </div>
-            <div class="social-links">
-                <a href="#twitter">Twitter</a>
-                <a href="#github">GitHub</a>
+            <div class="footer-links">
+                <a href="/reader">Open Reader</a>
+                <a href="#documents">Documents</a>
+                <a href="#webpages">Webpages</a>
+                <a href="#method">Method</a>
             </div>
         </div>
     </footer>
