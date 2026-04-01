@@ -1,6 +1,8 @@
 (function () {
     const elements = {
         fileInput: document.getElementById("file-input"),
+        textInput: document.getElementById("text-input"),
+        loadTextBtn: document.getElementById("load-text-btn"),
         voiceSelect: document.getElementById("voice-select"),
         speedSelect: document.getElementById("speed-select"),
         playFromStartBtn: document.getElementById("play-from-start-btn"),
@@ -64,6 +66,17 @@
             }
             await uploadAndRenderFile(file);
             elements.fileInput.value = "";
+        });
+
+        elements.loadTextBtn.addEventListener("click", async () => {
+            await loadInlineText(elements.textInput.value);
+        });
+
+        elements.textInput.addEventListener("keydown", async (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                event.preventDefault();
+                await loadInlineText(elements.textInput.value);
+            }
         });
 
         elements.playFromStartBtn.addEventListener("click", () => startReadingAt(0));
@@ -309,7 +322,9 @@
                 id: payload.document_id,
                 filename: payload.filename,
                 fileType: payload.file_type,
-                fileUrl: payload.file_url
+                fileUrl: payload.file_url,
+                sourceType: "upload",
+                canonicalText: ""
             };
 
             elements.documentMeta.textContent = `${payload.filename} - ${payload.file_type.toUpperCase()}`;
@@ -323,6 +338,7 @@
             state.readingMap = readingMap;
             state.sentenceRanges = buildSentenceRanges(readingMap.text);
             state.manifestReady = false;
+            state.currentDocument.canonicalText = readingMap.text;
 
             await saveManifest(readingMap.text);
             state.manifestReady = true;
@@ -341,9 +357,65 @@
         }
     }
 
+    async function loadInlineText(rawText) {
+        const normalizedInput = typeof rawText === "string"
+            ? rawText.replace(/\r\n/g, "\n").trim()
+            : "";
+
+        if (!normalizedInput) {
+            setStatus("Paste some text first before opening it in the reading room.", "error");
+            return;
+        }
+
+        setLoading(true, "Preparing text...");
+        setStatus("Opening pasted text...");
+
+        try {
+            await stopReading({ tellServer: true, clearHighlights: true });
+            clearDocumentViewer();
+
+            state.currentDocument = {
+                id: null,
+                filename: "Pasted text",
+                fileType: "txt",
+                fileUrl: null,
+                sourceType: "inline",
+                sourceText: normalizedInput,
+                canonicalText: ""
+            };
+
+            elements.documentMeta.textContent = "Pasted text - session only";
+            const readingMap = await renderCurrentDocument();
+            if (!readingMap || !readingMap.text.trim()) {
+                throw new Error("This pasted text did not produce a readable surface.");
+            }
+
+            state.readingMap = readingMap;
+            state.sentenceRanges = buildSentenceRanges(readingMap.text);
+            state.currentDocument.canonicalText = readingMap.text;
+            state.manifestReady = true;
+
+            setStatus("Ready. Click any visible text to start reading this pasted text.");
+        } catch (error) {
+            resetViewer();
+            state.currentDocument = null;
+            state.readingMap = null;
+            state.sentenceRanges = [];
+            state.manifestReady = false;
+            elements.documentMeta.textContent = "";
+            setStatus(error.message || "Something went wrong.", "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
     async function renderCurrentDocument() {
         if (!state.currentDocument) {
             return null;
+        }
+
+        if (state.currentDocument.sourceType === "inline") {
+            return renderInlineTextDocument(state.currentDocument.sourceText || "");
         }
 
         if (state.currentDocument.fileType === "pdf") {
@@ -477,6 +549,14 @@
 
     async function renderTextDocument(fileUrl) {
         const source = await fetchText(fileUrl);
+        return renderPlainTextDocument(source);
+    }
+
+    async function renderInlineTextDocument(source) {
+        return renderPlainTextDocument(source);
+    }
+
+    function renderPlainTextDocument(source) {
         const article = document.createElement("article");
         article.className = "txt-document rich-document";
         const normalized = source.replace(/\r\n/g, "\n");
@@ -956,15 +1036,11 @@
         setStatus(reason);
 
         try {
-            const response = await fetch("/api/read-sessions", {
+            const sessionRequest = buildSessionRequest(startOffset);
+            const response = await fetch(sessionRequest.url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    document_id: state.currentDocument.id,
-                    start_offset: startOffset,
-                    voice: state.currentVoice,
-                    rate: state.currentRate
-                })
+                body: JSON.stringify(sessionRequest.body)
             });
 
             const payload = await response.json();
@@ -1043,6 +1119,30 @@
         } finally {
             setLoading(false);
         }
+    }
+
+    function buildSessionRequest(startOffset) {
+        if (state.currentDocument?.sourceType === "inline") {
+            return {
+                url: "/api/page-read-sessions",
+                body: {
+                    text: state.currentDocument.canonicalText || state.readingMap?.text || "",
+                    start_offset: startOffset,
+                    voice: state.currentVoice,
+                    rate: state.currentRate
+                }
+            };
+        }
+
+        return {
+            url: "/api/read-sessions",
+            body: {
+                document_id: state.currentDocument.id,
+                start_offset: startOffset,
+                voice: state.currentVoice,
+                rate: state.currentRate
+            }
+        };
     }
 
     function attachSessionEventStream(session) {
@@ -1416,8 +1516,8 @@
         clearDocumentViewer();
         elements.documentViewer.innerHTML = `
             <div class="empty-state">
-                <h2>No document loaded</h2>
-                <p>Your uploaded file will render here in its own structure.</p>
+                <h2>No reading source loaded</h2>
+                <p>Your uploaded file or pasted text will render here in its own structure.</p>
             </div>
         `;
     }

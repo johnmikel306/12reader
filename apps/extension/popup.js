@@ -19,6 +19,8 @@
         voiceSelect: document.getElementById("voice-select"),
         rateRange: document.getElementById("rate-range"),
         rateReadout: document.getElementById("rate-readout"),
+        backendUrlInput: document.getElementById("backend-url-input"),
+        backendUrlSave: document.getElementById("backend-url-save"),
         clickModeToggle: document.getElementById("click-mode-toggle"),
         statusText: document.getElementById("status-text")
     };
@@ -65,8 +67,9 @@
         elements.stopBtn.addEventListener("click", () => sendAction("STOP_READING", "Stopped."));
 
         elements.voiceSelect.addEventListener("change", async () => {
-            await updateSettings({ voiceName: elements.voiceSelect.value });
-            setStatus("Voice updated.");
+            if (await updateSettings({ voiceName: elements.voiceSelect.value })) {
+                setStatus("Voice updated.");
+            }
         });
 
         elements.rateRange.addEventListener("input", () => {
@@ -76,20 +79,61 @@
 
         elements.rateRange.addEventListener("change", async () => {
             const rate = RATE_STEPS[Number(elements.rateRange.value)] || "+0%";
-            await updateSettings({ rate });
-            setStatus("Speed updated.");
+            if (await updateSettings({ rate })) {
+                setStatus("Speed updated.");
+            }
+        });
+
+        elements.backendUrlSave.addEventListener("click", async () => {
+            const backendBaseUrl = normalizeBackendUrlInput(elements.backendUrlInput.value);
+            if (backendBaseUrl == null) {
+                setStatus("Enter a valid backend URL.", true);
+                return;
+            }
+            if (!(await updateSettings({ backendBaseUrl }))) {
+                return;
+            }
+            try {
+                await loadVoices();
+                setStatus("Backend URL updated.");
+            } catch (error) {
+                setStatus(error.message || "Voice loading failed.", true);
+            }
+        });
+
+        elements.backendUrlInput.addEventListener("keydown", async (event) => {
+            if (event.key !== "Enter") {
+                return;
+            }
+
+            event.preventDefault();
+            const backendBaseUrl = normalizeBackendUrlInput(elements.backendUrlInput.value);
+            if (backendBaseUrl == null) {
+                setStatus("Enter a valid backend URL.", true);
+                return;
+            }
+            if (!(await updateSettings({ backendBaseUrl }))) {
+                return;
+            }
+            try {
+                await loadVoices();
+                setStatus("Backend URL updated.");
+            } catch (error) {
+                setStatus(error.message || "Voice loading failed.", true);
+            }
         });
 
         elements.clickModeToggle.addEventListener("change", async () => {
-            await updateSettings({ clickMode: elements.clickModeToggle.checked });
-            setStatus(elements.clickModeToggle.checked ? "Click-to-read enabled." : "Click-to-read disabled.");
+            if (await updateSettings({ clickMode: elements.clickModeToggle.checked })) {
+                setStatus(elements.clickModeToggle.checked ? "Click-to-read enabled." : "Click-to-read disabled.");
+            }
         });
     }
 
     async function loadVoices() {
         const response = await chrome.runtime.sendMessage({ type: "GET_BACKEND_VOICES" });
         if (!response || !response.ok) {
-            throw new Error(response?.error || "Could not load Edge TTS voices from the local app.");
+            throw new Error(response?.error || "Could not load Edge TTS voices from the configured backend.");
         }
 
         elements.voiceSelect.innerHTML = "";
@@ -134,10 +178,11 @@
 
         if (!response || !response.ok) {
             setStatus(response?.error || "Settings update failed.", true);
-            return;
+            return false;
         }
 
         renderState(response.state);
+        return true;
     }
 
     function renderTabMeta(tab) {
@@ -145,7 +190,7 @@
         const hostname = tab?.url ? safeHostname(tab.url) : "Current webpage";
 
         elements.artifactTitle.textContent = title;
-        elements.artifactMeta.textContent = `${hostname} · Local Edge TTS playback`;
+        elements.artifactMeta.textContent = `${hostname} · Configured Edge TTS backend`;
 
         if (tab?.favIconUrl) {
             elements.artifactCoverImage.src = tab.favIconUrl;
@@ -167,6 +212,7 @@
 
         elements.voiceSelect.value = state.voiceName || "en-US-AriaNeural";
         setRateUI(state.rate || "+0%");
+        elements.backendUrlInput.value = state.backendBaseUrl || "";
         elements.clickModeToggle.checked = Boolean(state.clickMode);
 
         if (state.lastError) {
@@ -230,6 +276,20 @@
             return new URL(url).hostname.replace(/^www\./, "");
         } catch (error) {
             return "Current webpage";
+        }
+    }
+
+    function normalizeBackendUrlInput(value) {
+        const trimmed = (value || "").trim();
+        if (!trimmed) {
+            return "";
+        }
+
+        const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        try {
+            return new URL(candidate).toString().replace(/\/$/, "");
+        } catch (error) {
+            return null;
         }
     }
 

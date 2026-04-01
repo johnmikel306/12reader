@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="cadence-public-base-url" content="{{ public_base_url }}">
     <title>Cadence Reader</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,6 +25,17 @@
                     <input id="file-input" type="file" accept=".pdf,.docx,.md,.markdown,.txt">
                 </label>
                 <p class="helper-text">Supported: PDF, DOCX, MD, TXT. Click the rendered page to begin from that exact line.</p>
+            </div>
+
+            <div class="control-row paste-row">
+                <label class="field field-textarea" for="text-input">
+                    <span>Or paste text</span>
+                    <textarea id="text-input" rows="6" placeholder="Paste an article, notes, or any plain text. This stays session-only and disappears on refresh."></textarea>
+                </label>
+                <div class="paste-actions">
+                    <button id="load-text-btn" type="button">Open pasted text</button>
+                    <p class="helper-text">No upload, no database, no saved document. Cadence keeps this only for the current browser session.</p>
+                </div>
             </div>
 
             <div class="control-row settings-row">
@@ -88,8 +100,8 @@
                 <div id="viewer-scroll-area" class="viewer-scroll-area">
                     <div id="document-viewer" class="document-viewer">
                         <div class="empty-state">
-                            <h2>No document loaded</h2>
-                            <p>Your document will appear here in its own structure, ready to be read in rhythm.</p>
+                            <h2>No reading source loaded</h2>
+                            <p>Your uploaded file or pasted text will appear here in its own structure, ready to be read in rhythm.</p>
                         </div>
                     </div>
                 </div>

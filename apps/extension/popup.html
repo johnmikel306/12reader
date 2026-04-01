@@ -24,7 +24,7 @@
             </div>
             <p id="artifact-kicker" class="artifact-kicker">Current page</p>
             <h1 id="artifact-title" class="artifact-title">Open a webpage to begin.</h1>
-            <p id="artifact-meta" class="artifact-meta">Local Edge TTS playback</p>
+            <p id="artifact-meta" class="artifact-meta">Configured Edge TTS backend</p>
         </section>
 
         <button id="primary-action-btn" type="button" class="primary-playback">Initiate playback</button>
@@ -70,13 +70,24 @@
             </div>
         </section>
 
+        <section class="control-panel">
+            <div class="panel-head">
+                <span class="panel-label">Backend endpoint</span>
+                <span class="panel-note">Local or Render</span>
+            </div>
+            <div class="backend-shell">
+                <input id="backend-url-input" type="url" placeholder="https://your-app.onrender.com" spellcheck="false" autocapitalize="off" autocomplete="off">
+                <button id="backend-url-save" type="button" class="secondary-button secondary-button-dark">Save backend URL</button>
+            </div>
+        </section>
+
         <section class="status-panel">
             <p id="status-text" class="status-text">Open a webpage and start reading.</p>
         </section>
 
         <div class="command-hints">
-            <span>Ctrl/Cmd + Shift + U · Start</span>
-            <span>Ctrl/Cmd + Shift + P · Pause / Resume</span>
+            <span>Ctrl/Cmd + U · Start / Pause / Resume</span>
+            <span>Ctrl/Cmd + Shift + U · Start from top</span>
         </div>
     </main>
 

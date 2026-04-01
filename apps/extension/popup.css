@@ -159,7 +159,8 @@ input {
 
 .primary-playback,
 .secondary-button,
-.voice-shell select {
+.voice-shell select,
+.backend-shell input {
     width: 100%;
     border: 1px solid var(--line-strong);
     background: #ffffff;
@@ -306,6 +307,22 @@ input {
     font-style: italic;
     letter-spacing: -0.03em;
     outline: none;
+}
+
+.backend-shell {
+    display: grid;
+    gap: 10px;
+}
+
+.backend-shell input {
+    min-height: 52px;
+    padding: 0 14px;
+    font-size: 0.88rem;
+    outline: none;
+}
+
+.backend-shell input:focus {
+    box-shadow: 0 0 0 3px rgba(20, 20, 20, 0.08);
 }
 
 .speed-panel {

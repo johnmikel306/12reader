@@ -1,8 +1,10 @@
-const BACKEND_BASE_URL = "http://127.0.0.1:5000";
+const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:5000";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
+const CONTENT_SCRIPT_FILES = ["content.js"];
 const ACTIVE_TAB_STORAGE_KEY = "runtime:activeSpeechTabId";
 const TAB_STATE_STORAGE_PREFIX = "runtime:tabState:";
 const DEFAULT_SETTINGS = {
+    backendBaseUrl: DEFAULT_BACKEND_BASE_URL,
     voiceName: "en-US-AriaNeural",
     rate: "+0%",
     clickMode: false
@@ -123,6 +125,15 @@ async function handleMessage(message, sender) {
             await stopSpeech(tabId, { clearHighlights: true, resetOffset: true });
             return { state: await getSerializableState(tabId) };
 
+        case "FLOATING_SEEK_READING":
+            if (!tabId) {
+                throw new Error("No active tab available.");
+            }
+            await seekSpeech(tabId, Number(message.offset) || 0, {
+                autoplay: message.autoplay
+            });
+            return { state: await getSerializableState(tabId) };
+
         case "OFFSCREEN_PROGRESS":
             await handleOffscreenProgress(message);
             return {};
@@ -180,13 +191,45 @@ async function getActiveTab() {
 }
 
 
+async function ensureContentScriptReady(tabId) {
+    const existing = await sendOptionalMessageToTab(tabId, { type: "CONTENT_PING" });
+    if (existing && existing.ok) {
+        return;
+    }
+
+    const tab = await chrome.tabs.get(tabId);
+    if (!isInjectableTab(tab)) {
+        throw new Error("Cadence cannot run on this page.");
+    }
+
+    await chrome.scripting.executeScript({
+        target: { tabId },
+        files: CONTENT_SCRIPT_FILES
+    });
+
+    const injected = await sendOptionalMessageToTab(tabId, { type: "CONTENT_PING" });
+    if (!injected || !injected.ok) {
+        throw new Error("Cadence could not attach to this page.");
+    }
+}
+
+
+function isInjectableTab(tab) {
+    if (!tab || !tab.url) {
+        return false;
+    }
+
+    return /^https?:\/\//.test(tab.url) || /^file:\/\//.test(tab.url);
+}
+
+
 async function getSerializableState(tabId) {
     const state = await ensureTabState(tabId);
     await ensureActiveSpeechTabId();
 
     return {
         tabId,
-        backendBaseUrl: BACKEND_BASE_URL,
+        backendBaseUrl: state.settings.backendBaseUrl,
         currentOffset: state.currentOffset,
         hasDocumentText: Boolean(state.text),
         isSpeaking: state.isSpeaking,
@@ -233,7 +276,7 @@ async function cleanupRemovedTab(tabId) {
     const state = await ensureTabState(tabId).catch(() => null);
 
     if (state && state.sessionId) {
-        void deleteBackendSession(state.sessionId);
+        void deleteBackendSession(state.sessionId, state.sessionBackendBaseUrl);
     }
 
     await ensureActiveSpeechTabId();
@@ -266,15 +309,20 @@ async function updateSettings(tabId, incomingSettings) {
     state.settings = nextSettings;
     await persistTabState(tabId, state);
 
-    await sendOptionalMessageToTab(tabId, {
-        type: "SET_CLICK_MODE",
-        enabled: nextSettings.clickMode
-    });
+    const changedClickMode = Object.prototype.hasOwnProperty.call(incomingSettings, "clickMode");
+    if (changedClickMode) {
+        await ensureContentScriptReady(tabId);
+        await sendOptionalMessageToTab(tabId, {
+            type: "SET_CLICK_MODE",
+            enabled: nextSettings.clickMode
+        });
+    }
 
     const changedVoice = Object.prototype.hasOwnProperty.call(incomingSettings, "voiceName");
     const changedRate = Object.prototype.hasOwnProperty.call(incomingSettings, "rate");
+    const changedBackendBaseUrl = Object.prototype.hasOwnProperty.call(incomingSettings, "backendBaseUrl");
 
-    if (state.sessionId && state.text && (changedVoice || changedRate)) {
+    if (state.sessionId && state.text && (changedVoice || changedRate || changedBackendBaseUrl)) {
         if (changedRate && state.isSpeaking) {
             await sendOptionalOffscreenMessage({
                 target: "offscreen",
@@ -294,6 +342,7 @@ async function updateSettings(tabId, incomingSettings) {
 
 
 async function refreshDocumentText(tabId) {
+    await ensureContentScriptReady(tabId);
     const response = await sendMessageToTab(tabId, { type: "GET_READING_SNAPSHOT" });
     if (!response || !response.text || !response.text.trim()) {
         throw new Error("This page does not expose readable text for the extension.");
@@ -332,12 +381,14 @@ async function startSpeech(tabId, offset, options = {}) {
     }
 
     const previousSessionId = state.sessionId;
+    const previousSessionBackendBaseUrl = state.sessionBackendBaseUrl;
     const sessionToken = state.sessionToken + 1;
     const session = await createPageReadSession({
         text,
         startOffset,
         voice: state.settings.voiceName,
-        rate: state.settings.rate
+        rate: state.settings.rate,
+        backendBaseUrl: state.settings.backendBaseUrl
     });
 
     await ensureOffscreenDocument();
@@ -345,6 +396,7 @@ async function startSpeech(tabId, offset, options = {}) {
     state.sessionToken = sessionToken;
     state.sessionId = session.session_id;
     state.sessionStartOffset = session.start_offset;
+    state.sessionBackendBaseUrl = state.settings.backendBaseUrl;
     state.currentOffset = session.start_offset;
     state.isSpeaking = false;
     state.isPaused = !autoplay;
@@ -368,13 +420,14 @@ async function startSpeech(tabId, offset, options = {}) {
             sessionId: session.session_id,
             sessionToken,
             startOffset: session.start_offset,
-            audioUrl: absoluteBackendUrl(session.audio_url),
-            eventsUrl: absoluteBackendUrl(session.events_url),
+            audioUrl: absoluteBackendUrl(session.audio_url, state.settings.backendBaseUrl),
+            eventsUrl: absoluteBackendUrl(session.events_url, state.settings.backendBaseUrl),
             autoplay,
             playbackRate: 1
         });
     } catch (error) {
         state.sessionId = null;
+        state.sessionBackendBaseUrl = null;
         state.isSpeaking = false;
         state.isPaused = false;
         state.lastError = error.message || "Audio playback could not start.";
@@ -383,13 +436,13 @@ async function startSpeech(tabId, offset, options = {}) {
         }
         await persistTabState(tabId, state);
         await persistActiveSpeechTabId();
-        void deleteBackendSession(session.session_id);
+        void deleteBackendSession(session.session_id, state.settings.backendBaseUrl);
         await broadcastState(tabId);
         throw error;
     }
 
     if (previousSessionId && previousSessionId !== session.session_id) {
-        void deleteBackendSession(previousSessionId);
+        void deleteBackendSession(previousSessionId, previousSessionBackendBaseUrl);
     }
 
     await broadcastState(tabId);
@@ -456,6 +509,7 @@ async function stopSpeech(tabId, options = {}) {
     const { clearHighlights = true, resetOffset = false } = options;
     const state = await ensureTabState(tabId);
     const sessionId = state.sessionId;
+    const sessionBackendBaseUrl = state.sessionBackendBaseUrl;
 
     state.sessionToken += 1;
 
@@ -469,7 +523,7 @@ async function stopSpeech(tabId, options = {}) {
     }
 
     if (sessionId) {
-        void deleteBackendSession(sessionId);
+        void deleteBackendSession(sessionId, sessionBackendBaseUrl);
     }
 
     if (activeSpeechTabId === tabId) {
@@ -478,6 +532,7 @@ async function stopSpeech(tabId, options = {}) {
 
     state.sessionId = null;
     state.sessionStartOffset = 0;
+    state.sessionBackendBaseUrl = null;
     state.isSpeaking = false;
     state.isPaused = false;
     state.pendingRestart = false;
@@ -497,6 +552,21 @@ async function stopSpeech(tabId, options = {}) {
 }
 
 
+async function seekSpeech(tabId, offset, options = {}) {
+    await syncTabStateWithOffscreen(tabId);
+    const state = await ensureTabState(tabId);
+    if (!state.text) {
+        await refreshDocumentText(tabId);
+    }
+
+    const autoplay = typeof options.autoplay === "boolean"
+        ? options.autoplay
+        : state.isSpeaking;
+
+    await startSpeech(tabId, offset, { autoplay });
+}
+
+
 async function handleOffscreenProgress(message) {
     const tabId = message.tabId;
     if (!tabId) {
@@ -513,7 +583,8 @@ async function handleOffscreenProgress(message) {
 
     await sendOptionalMessageToTab(tabId, {
         type: "READING_PROGRESS",
-        absoluteOffset: clamp(Number(message.highlightOffset) || 0, 0, state.text.length)
+        absoluteOffset: clamp(Number(message.highlightOffset) || 0, 0, state.text.length),
+        resumeOffset: state.currentOffset
     });
 }
 
@@ -551,7 +622,7 @@ async function handleOffscreenStatus(message) {
 
         case "ended":
             if (state.sessionId) {
-                void deleteBackendSession(state.sessionId);
+                void deleteBackendSession(state.sessionId, state.sessionBackendBaseUrl);
             }
             state.currentOffset = state.text.length;
             state.isSpeaking = false;
@@ -559,6 +630,7 @@ async function handleOffscreenStatus(message) {
             state.pendingRestart = false;
             state.sessionId = null;
             state.sessionStartOffset = 0;
+            state.sessionBackendBaseUrl = null;
             if (activeSpeechTabId === tabId) {
                 activeSpeechTabId = null;
             }
@@ -567,7 +639,7 @@ async function handleOffscreenStatus(message) {
 
         case "error":
             if (state.sessionId) {
-                void deleteBackendSession(state.sessionId);
+                void deleteBackendSession(state.sessionId, state.sessionBackendBaseUrl);
             }
             state.isSpeaking = false;
             state.isPaused = false;
@@ -575,6 +647,7 @@ async function handleOffscreenStatus(message) {
             state.lastError = message.error || "Edge TTS playback failed.";
             state.sessionId = null;
             state.sessionStartOffset = 0;
+            state.sessionBackendBaseUrl = null;
             if (activeSpeechTabId === tabId) {
                 activeSpeechTabId = null;
             }
@@ -680,7 +753,8 @@ async function getOffscreenState() {
 
 
 async function fetchBackendVoices() {
-    return fetchBackendJson("/api/voices");
+    const settings = await storageLocalGet(DEFAULT_SETTINGS);
+    return fetchBackendJson("/api/voices", {}, settings.backendBaseUrl);
 }
 
 
@@ -694,17 +768,17 @@ async function createPageReadSession(payload) {
             voice: payload.voice,
             rate: payload.rate
         })
-    });
+    }, payload.backendBaseUrl);
 }
 
 
-async function deleteBackendSession(sessionId) {
+async function deleteBackendSession(sessionId, backendBaseUrl) {
     if (!sessionId) {
         return;
     }
 
     try {
-        await fetch(absoluteBackendUrl(`/api/read-sessions/${sessionId}`), {
+        await fetch(absoluteBackendUrl(`/api/read-sessions/${sessionId}`, backendBaseUrl), {
             method: "DELETE"
         });
     } catch (error) {
@@ -713,8 +787,8 @@ async function deleteBackendSession(sessionId) {
 }
 
 
-async function fetchBackendJson(path, options = {}) {
-    const response = await fetch(absoluteBackendUrl(path), options);
+async function fetchBackendJson(path, options = {}, backendBaseUrl) {
+    const response = await fetch(absoluteBackendUrl(path, backendBaseUrl), options);
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -725,11 +799,11 @@ async function fetchBackendJson(path, options = {}) {
 }
 
 
-function absoluteBackendUrl(path) {
+function absoluteBackendUrl(path, backendBaseUrl) {
     if (/^https?:\/\//.test(path)) {
         return path;
     }
-    return `${BACKEND_BASE_URL}${path}`;
+    return `${normalizeBackendBaseUrl(backendBaseUrl || DEFAULT_BACKEND_BASE_URL)}${path}`;
 }
 
 
@@ -801,6 +875,7 @@ function createInitialState(settings) {
         sessionId: null,
         sessionToken: 0,
         sessionStartOffset: 0,
+        sessionBackendBaseUrl: null,
         isSpeaking: false,
         isPaused: false,
         pendingRestart: false,
@@ -817,6 +892,9 @@ function hydrateStoredState(storedState, settings) {
         sessionId: typeof storedState.sessionId === "string" ? storedState.sessionId : null,
         sessionToken: Number.isFinite(storedState.sessionToken) ? storedState.sessionToken : 0,
         sessionStartOffset: Number.isFinite(storedState.sessionStartOffset) ? storedState.sessionStartOffset : 0,
+        sessionBackendBaseUrl: typeof storedState.sessionBackendBaseUrl === "string"
+            ? normalizeBackendBaseUrl(storedState.sessionBackendBaseUrl)
+            : null,
         isSpeaking: Boolean(storedState.isSpeaking),
         isPaused: Boolean(storedState.isPaused),
         pendingRestart: Boolean(storedState.pendingRestart),
@@ -833,6 +911,7 @@ function serializeTabState(state) {
         sessionId: state.sessionId,
         sessionToken: state.sessionToken,
         sessionStartOffset: state.sessionStartOffset,
+        sessionBackendBaseUrl: state.sessionBackendBaseUrl,
         isSpeaking: state.isSpeaking,
         isPaused: state.isPaused,
         pendingRestart: state.pendingRestart,
@@ -878,6 +957,10 @@ function tabStateStorageKey(tabId) {
 function sanitizeSettings(settings) {
     const next = {};
 
+    if (Object.prototype.hasOwnProperty.call(settings, "backendBaseUrl")) {
+        next.backendBaseUrl = sanitizeBackendBaseUrl(settings.backendBaseUrl);
+    }
+
     if (Object.prototype.hasOwnProperty.call(settings, "voiceName")) {
         next.voiceName = typeof settings.voiceName === "string"
             ? settings.voiceName
@@ -896,6 +979,28 @@ function sanitizeSettings(settings) {
     }
 
     return next;
+}
+
+
+function sanitizeBackendBaseUrl(value) {
+    if (typeof value !== "string" || !value.trim()) {
+        return DEFAULT_BACKEND_BASE_URL;
+    }
+
+    return normalizeBackendBaseUrl(value);
+}
+
+
+function normalizeBackendBaseUrl(value) {
+    try {
+        const url = new URL(value);
+        if (!/^https?:$/.test(url.protocol)) {
+            throw new Error("Unsupported protocol");
+        }
+        return url.toString().replace(/\/$/, "");
+    } catch (error) {
+        return DEFAULT_BACKEND_BASE_URL;
+    }
 }
 
 

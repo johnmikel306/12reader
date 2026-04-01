@@ -38,6 +38,7 @@ DOCUMENT_TTL_SECONDS = 24 * 60 * 60
 SESSION_TTL_SECONDS = 30 * 60
 FINISHED_SESSION_TTL_SECONDS = 5 * 60
 RATE_PATTERN = re.compile(r"^[+-]\d+%$")
+PUBLIC_BASE_URL = os.environ.get("CADENCE_PUBLIC_BASE_URL", "").strip()
 
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
@@ -75,6 +76,16 @@ def build_document_path(document_id: str, filename: str) -> str:
 
 def current_timestamp() -> float:
     return time.time()
+
+
+def get_public_base_url() -> str:
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.rstrip("/")
+
+    try:
+        return request.host_url.rstrip("/")
+    except RuntimeError:
+        return ""
 
 
 def cleanup_expired_entries() -> None:
@@ -325,12 +336,12 @@ def create_streaming_session(
 
 @app.route("/")
 def landing():
-    return render_template("landing.html")
+    return render_template("landing.html", public_base_url=get_public_base_url())
 
 
 @app.route("/reader")
 def reader():
-    return render_template("index.html")
+    return render_template("index.html", public_base_url=get_public_base_url())
 
 
 @app.route("/api/voices", methods=["GET"])
@@ -345,6 +356,11 @@ def get_voices():
 @app.route("/api/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/runtime-config", methods=["GET"])
+def runtime_config():
+    return jsonify({"public_base_url": get_public_base_url()})
 
 
 @app.route("/api/upload", methods=["POST"])

@@ -412,7 +412,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# 12reader monorepo
+# cadence monorepo
 node_modules/
 apps/web/uploads/
 uploads/

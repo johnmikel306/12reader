@@ -11,12 +11,31 @@
     ]);
 
     const LAYOUT_SKIP_TAGS = new Set(["HEADER", "NAV", "FOOTER", "ASIDE"]);
+    const RATE_STEPS = ["-25%", "+0%", "+25%", "+50%"];
+    const RATE_LABELS = {
+        "-25%": "0.75x",
+        "+0%": "1.0x",
+        "+25%": "1.25x",
+        "+50%": "1.5x"
+    };
     const OVERLAY_ID = "twelve-reader-overlay";
     const STYLE_ID = "twelve-reader-style";
     const TOAST_ID = "twelve-reader-toast";
     const CONTROLLER_ID = "twelve-reader-controller";
+    const CONTROLLER_TITLE_ID = "twelve-reader-controller-title";
+    const CONTROLLER_SUBTITLE_ID = "twelve-reader-controller-subtitle";
     const CONTROLLER_STATUS_ID = "twelve-reader-controller-status";
+    const CONTROLLER_CURRENT_TIME_ID = "twelve-reader-controller-current-time";
+    const CONTROLLER_TOTAL_TIME_ID = "twelve-reader-controller-total-time";
+    const CONTROLLER_SEEK_ID = "twelve-reader-controller-seek";
+    const CONTROLLER_SPEED_ID = "twelve-reader-controller-speed";
+    const CONTROLLER_VOICE_ID = "twelve-reader-controller-voice";
+    const CONTROLLER_CLOSE_ID = "twelve-reader-controller-close";
+    const CONTROLLER_REWIND_ID = "twelve-reader-controller-rewind";
+    const CONTROLLER_PREVIOUS_ID = "twelve-reader-controller-previous";
     const CONTROLLER_TOGGLE_ID = "twelve-reader-controller-toggle";
+    const CONTROLLER_NEXT_ID = "twelve-reader-controller-next";
+    const CONTROLLER_FORWARD_ID = "twelve-reader-controller-forward";
     const CONTROLLER_STOP_ID = "twelve-reader-controller-stop";
 
     const state = {
@@ -26,8 +45,13 @@
         activeSentenceRange: null,
         activeWordRange: null,
         readerState: null,
+        availableVoices: [],
+        voicesPromise: null,
+        voiceLoadErrorShown: false,
         mutationObserver: null,
-        resizeScheduled: false
+        resizeScheduled: false,
+        isScrubbing: false,
+        scrubRatio: 0
     };
 
     injectStyles();
@@ -57,8 +81,64 @@
         });
 
         document.addEventListener("click", onDocumentClick, true);
+        document.addEventListener("keydown", onDocumentKeyDown, true);
         window.addEventListener("scroll", scheduleHighlightRedraw, { passive: true });
         window.addEventListener("resize", scheduleHighlightRedraw, { passive: true });
+    }
+
+    async function onDocumentKeyDown(event) {
+        if (!isPlaybackShortcut(event)) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        try {
+            const response = await chrome.runtime.sendMessage({ type: "FLOATING_TOGGLE_PLAYBACK" });
+            if (!response || !response.ok) {
+                throw new Error(response?.error || "Playback control failed.");
+            }
+            if (response.state) {
+                applyReaderState(response.state);
+            }
+        } catch (error) {
+            showToast(error.message || "Playback control failed.");
+        }
+    }
+
+    function isPlaybackShortcut(event) {
+        if (!event || event.defaultPrevented || event.repeat) {
+            return false;
+        }
+
+        if (event.altKey || event.shiftKey) {
+            return false;
+        }
+
+        if (!(event.ctrlKey || event.metaKey)) {
+            return false;
+        }
+
+        if ((event.key || "").toLowerCase() !== "u") {
+            return false;
+        }
+
+        return !isEditableTarget(event.target);
+    }
+
+    function isEditableTarget(target) {
+        const element = target instanceof Element ? target : target?.parentElement;
+        if (!element) {
+            return false;
+        }
+
+        if (element.closest("input, textarea, select, [contenteditable]")) {
+            return true;
+        }
+
+        return element instanceof HTMLElement && element.isContentEditable;
     }
 
     async function handleMessage(message) {
@@ -73,6 +153,9 @@
                 };
             }
 
+            case "CONTENT_PING":
+                return { ok: true };
+
             case "SET_CLICK_MODE":
                 state.clickMode = Boolean(message.enabled);
                 updateClickModeMarker();
@@ -85,6 +168,10 @@
 
             case "READER_STARTED":
                 buildOrReuseReadingMap();
+                if (state.readerState) {
+                    state.readerState.currentOffset = Number(message.startOffset) || 0;
+                    syncFloatingControllerProgress(state.readerState);
+                }
                 return { ok: true };
 
             case "READING_PROGRESS":
@@ -93,6 +180,10 @@
                     state.dirty = true;
                     buildOrReuseReadingMap();
                     highlightOffset(message.absoluteOffset || 0);
+                }
+                if (state.readerState) {
+                    state.readerState.currentOffset = message.resumeOffset || message.absoluteOffset || 0;
+                    syncFloatingControllerProgress(state.readerState);
                 }
                 return { ok: true };
 
@@ -207,6 +298,7 @@
             text,
             runs,
             runLookup,
+            wordCount: countWords(text),
             sentenceRanges: buildSentenceRanges(text)
         };
         state.dirty = false;
@@ -767,7 +859,13 @@
     }
 
     function applyReaderState(readerState) {
+        const previousBackendBaseUrl = state.readerState?.backendBaseUrl || "";
         state.readerState = readerState || null;
+        if (readerState && previousBackendBaseUrl !== (readerState.backendBaseUrl || "")) {
+            state.availableVoices = [];
+            state.voicesPromise = null;
+            state.voiceLoadErrorShown = false;
+        }
         updateFloatingController(readerState || null);
     }
 
@@ -779,22 +877,50 @@
         }
 
         const controller = ensureFloatingController();
+        const readingMap = buildOrReuseReadingMap();
+        const title = controller.querySelector(`#${CONTROLLER_TITLE_ID}`);
+        const subtitle = controller.querySelector(`#${CONTROLLER_SUBTITLE_ID}`);
         const status = controller.querySelector(`#${CONTROLLER_STATUS_ID}`);
+        const speed = controller.querySelector(`#${CONTROLLER_SPEED_ID}`);
+        const voice = controller.querySelector(`#${CONTROLLER_VOICE_ID}`);
+        const seekInput = controller.querySelector(`#${CONTROLLER_SEEK_ID}`);
         const toggleButton = controller.querySelector(`#${CONTROLLER_TOGGLE_ID}`);
+        const navigationDisabled = !readingMap.text.trim();
+
+        title.textContent = getControllerTitle();
+        title.title = title.textContent;
+        subtitle.textContent = `Narrator: ${formatVoiceName(readerState.voiceName).toUpperCase()}`;
+        speed.value = RATE_STEPS.includes(readerState.rate) ? readerState.rate : "+0%";
+        speed.title = formatRateLabel(readerState.rate);
+        renderControllerVoiceOptions(readerState.voiceName);
+        voice.title = formatVoiceLabel(readerState.voiceName);
+        void ensureControllerVoices();
 
         if (readerState.isSpeaking) {
             status.textContent = "Reading aloud";
-            toggleButton.textContent = "Pause";
+            toggleButton.innerHTML = controllerIcon("pause");
             toggleButton.disabled = false;
+            controller.dataset.state = "reading";
         } else if (readerState.isPaused) {
             status.textContent = "Paused";
-            toggleButton.textContent = "Resume";
+            toggleButton.innerHTML = controllerIcon("play");
             toggleButton.disabled = false;
+            controller.dataset.state = "paused";
         } else {
-            status.textContent = "Preparing audio...";
-            toggleButton.textContent = "Pause";
+            status.textContent = "Preparing audio";
+            toggleButton.innerHTML = controllerIcon("pause");
             toggleButton.disabled = true;
+            controller.dataset.state = "loading";
         }
+
+        toggleButton.setAttribute("aria-label", readerState.isPaused ? "Resume playback" : "Pause playback");
+        seekInput.disabled = navigationDisabled;
+        controller.querySelector(`#${CONTROLLER_REWIND_ID}`).disabled = navigationDisabled;
+        controller.querySelector(`#${CONTROLLER_PREVIOUS_ID}`).disabled = navigationDisabled;
+        controller.querySelector(`#${CONTROLLER_NEXT_ID}`).disabled = navigationDisabled;
+        controller.querySelector(`#${CONTROLLER_FORWARD_ID}`).disabled = navigationDisabled;
+
+        syncFloatingControllerProgress(readerState);
 
         controller.hidden = false;
         controller.dataset.visible = "true";
@@ -806,8 +932,370 @@
             return;
         }
 
+        state.isScrubbing = false;
         controller.hidden = true;
         controller.dataset.visible = "false";
+    }
+
+    function syncFloatingControllerProgress(readerState) {
+        const controller = document.getElementById(CONTROLLER_ID);
+        if (!controller || !readerState) {
+            return;
+        }
+
+        const readingMap = buildOrReuseReadingMap();
+        const seekInput = controller.querySelector(`#${CONTROLLER_SEEK_ID}`);
+        const currentTime = controller.querySelector(`#${CONTROLLER_CURRENT_TIME_ID}`);
+        const totalTime = controller.querySelector(`#${CONTROLLER_TOTAL_TIME_ID}`);
+        const totalLength = readingMap.text.length;
+        const liveOffset = clamp(Number(readerState.currentOffset) || 0, 0, totalLength);
+        const displayOffset = state.isScrubbing
+            ? offsetFromProgressRatio(totalLength, state.scrubRatio)
+            : liveOffset;
+        const progressRatio = totalLength > 0 ? displayOffset / totalLength : 0;
+        const totalSeconds = estimateTotalDurationSeconds(readingMap, readerState.rate);
+        const currentSeconds = totalSeconds * progressRatio;
+
+        if (!state.isScrubbing) {
+            seekInput.value = String(Math.round(progressRatio * 1000));
+        }
+
+        paintSeekTrack(seekInput, progressRatio);
+        currentTime.textContent = formatClockLabel(currentSeconds);
+        totalTime.textContent = formatClockLabel(totalSeconds);
+    }
+
+    async function ensureControllerVoices() {
+        if (state.availableVoices.length) {
+            return state.availableVoices;
+        }
+
+        if (state.voicesPromise) {
+            return state.voicesPromise;
+        }
+
+        state.voicesPromise = chrome.runtime.sendMessage({ type: "GET_BACKEND_VOICES" })
+            .then((response) => {
+                if (!response || !response.ok) {
+                    throw new Error(response?.error || "Could not load Edge TTS voices.");
+                }
+
+                state.availableVoices = Array.isArray(response.voices) ? response.voices : [];
+                state.voiceLoadErrorShown = false;
+                if (state.readerState) {
+                    renderControllerVoiceOptions(state.readerState.voiceName);
+                }
+                return state.availableVoices;
+            })
+            .catch((error) => {
+                if (!state.voiceLoadErrorShown) {
+                    showToast(error.message || "Could not load Edge TTS voices.");
+                    state.voiceLoadErrorShown = true;
+                }
+                return [];
+            })
+            .finally(() => {
+                state.voicesPromise = null;
+            });
+
+        return state.voicesPromise;
+    }
+
+    function renderControllerVoiceOptions(selectedVoiceName) {
+        const controller = document.getElementById(CONTROLLER_ID);
+        if (!controller) {
+            return;
+        }
+
+        const voiceSelect = controller.querySelector(`#${CONTROLLER_VOICE_ID}`);
+        if (!voiceSelect) {
+            return;
+        }
+
+        const safeSelectedVoice = selectedVoiceName || "en-US-AriaNeural";
+        let options = state.availableVoices.length
+            ? state.availableVoices
+            : [{ name: safeSelectedVoice, locale: "" }];
+
+        if (!options.some((voice) => voice.name === safeSelectedVoice)) {
+            options = [{ name: safeSelectedVoice, locale: "" }, ...options];
+        }
+
+        voiceSelect.innerHTML = "";
+        options.forEach((voice) => {
+            const option = document.createElement("option");
+            option.value = voice.name;
+            option.textContent = formatVoiceName(voice.name);
+            option.title = voice.locale ? `${voice.name} (${voice.locale})` : voice.name;
+            voiceSelect.appendChild(option);
+        });
+
+        voiceSelect.value = safeSelectedVoice;
+        voiceSelect.disabled = !state.availableVoices.length;
+        voiceSelect.title = formatVoiceLabel(safeSelectedVoice);
+    }
+
+    async function updateFloatingSetting(settings, successMessage) {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "UPDATE_SETTINGS",
+                settings
+            });
+            if (!response || !response.ok) {
+                throw new Error(response?.error || "Settings update failed.");
+            }
+            if (response.state) {
+                applyReaderState(response.state);
+            }
+            if (successMessage) {
+                showToast(successMessage);
+            }
+        } catch (error) {
+            showToast(error.message || "Settings update failed.");
+        }
+    }
+
+    async function commitControllerSeekFromSlider() {
+        if (!state.readerState) {
+            return;
+        }
+
+        const readingMap = buildOrReuseReadingMap();
+        const targetOffset = offsetFromProgressRatio(readingMap.text.length, state.scrubRatio);
+        state.isScrubbing = false;
+        await requestFloatingSeek(targetOffset, { autoplay: state.readerState.isSpeaking });
+    }
+
+    async function seekByEstimatedSeconds(deltaSeconds) {
+        if (!state.readerState) {
+            return;
+        }
+
+        const readingMap = buildOrReuseReadingMap();
+        const totalSeconds = estimateTotalDurationSeconds(readingMap, state.readerState.rate);
+        if (!readingMap.text.length || !totalSeconds) {
+            return;
+        }
+
+        const currentOffset = clamp(Number(state.readerState.currentOffset) || 0, 0, readingMap.text.length);
+        const currentSeconds = totalSeconds * (currentOffset / readingMap.text.length);
+        const targetSeconds = clamp(currentSeconds + deltaSeconds, 0, totalSeconds);
+        const targetOffset = offsetFromProgressRatio(readingMap.text.length, targetSeconds / totalSeconds);
+        await requestFloatingSeek(targetOffset, { autoplay: state.readerState.isSpeaking });
+    }
+
+    async function seekBySentence(direction) {
+        if (!state.readerState) {
+            return;
+        }
+
+        const readingMap = buildOrReuseReadingMap();
+        const sentenceRanges = readingMap.sentenceRanges;
+        if (!sentenceRanges.length) {
+            return;
+        }
+
+        const currentOffset = clamp(Number(state.readerState.currentOffset) || 0, 0, readingMap.text.length);
+        const currentIndex = findSentenceIndexForOffset(currentOffset, sentenceRanges);
+        if (currentIndex < 0) {
+            return;
+        }
+
+        let nextIndex = currentIndex;
+        if (direction < 0) {
+            const currentSentence = sentenceRanges[currentIndex];
+            nextIndex = currentOffset - currentSentence.start > 12
+                ? currentIndex
+                : Math.max(0, currentIndex - 1);
+        } else if (direction > 0) {
+            nextIndex = Math.min(sentenceRanges.length - 1, currentIndex + 1);
+        }
+
+        await requestFloatingSeek(sentenceRanges[nextIndex].start, { autoplay: state.readerState.isSpeaking });
+    }
+
+    async function requestFloatingSeek(targetOffset, options = {}) {
+        if (!state.readerState) {
+            return;
+        }
+
+        const readingMap = buildOrReuseReadingMap();
+        const normalizedOffset = snapSeekOffset(readingMap.text, targetOffset);
+        const autoplay = typeof options.autoplay === "boolean"
+            ? options.autoplay
+            : state.readerState.isSpeaking;
+
+        state.readerState.currentOffset = normalizedOffset;
+        syncFloatingControllerProgress(state.readerState);
+        highlightOffset(normalizedOffset);
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "FLOATING_SEEK_READING",
+                offset: normalizedOffset,
+                autoplay
+            });
+            if (!response || !response.ok) {
+                throw new Error(response?.error || "Seek failed.");
+            }
+            if (response.state) {
+                applyReaderState(response.state);
+            }
+        } catch (error) {
+            showToast(error.message || "Seek failed.");
+            try {
+                const response = await chrome.runtime.sendMessage({ type: "GET_TAB_STATE" });
+                if (response && response.ok && response.state) {
+                    applyReaderState(response.state);
+                }
+            } catch (refreshError) {
+                // Ignore state refresh failures after a seek error.
+            }
+        }
+    }
+
+    function offsetFromProgressRatio(totalLength, ratio) {
+        if (!totalLength) {
+            return 0;
+        }
+
+        return clamp(Math.round(totalLength * clamp(ratio, 0, 1)), 0, totalLength);
+    }
+
+    function paintSeekTrack(seekInput, ratio) {
+        const progress = `${Math.round(clamp(ratio, 0, 1) * 100)}%`;
+        seekInput.style.setProperty("--twelve-reader-progress", progress);
+    }
+
+    function snapSeekOffset(text, rawOffset) {
+        const safeText = text || "";
+        let offset = clamp(Number(rawOffset) || 0, 0, safeText.length);
+        if (!safeText || offset <= 0 || offset >= safeText.length) {
+            return offset;
+        }
+
+        while (offset > 0 && /\S/.test(safeText[offset - 1]) && /\S/.test(safeText[offset])) {
+            offset -= 1;
+        }
+
+        while (offset < safeText.length && /\s/.test(safeText[offset])) {
+            offset += 1;
+        }
+
+        return clamp(offset, 0, safeText.length);
+    }
+
+    function findSentenceIndexForOffset(offset, sentenceRanges) {
+        for (let index = 0; index < sentenceRanges.length; index += 1) {
+            const range = sentenceRanges[index];
+            if (offset >= range.start && offset < range.end) {
+                return index;
+            }
+        }
+
+        if (!sentenceRanges.length) {
+            return -1;
+        }
+
+        return offset >= sentenceRanges[sentenceRanges.length - 1].end
+            ? sentenceRanges.length - 1
+            : 0;
+    }
+
+    function estimateTotalDurationSeconds(readingMap, rate) {
+        if (!readingMap.wordCount) {
+            return 0;
+        }
+
+        const baseWordsPerMinute = 170;
+        return (readingMap.wordCount / (baseWordsPerMinute * rateToPlaybackMultiplier(rate))) * 60;
+    }
+
+    function rateToPlaybackMultiplier(rate) {
+        const match = /^([+-])(\d+)%$/.exec(rate || "+0%");
+        if (!match) {
+            return 1;
+        }
+
+        const direction = match[1] === "+" ? 1 : -1;
+        const amount = Number(match[2]) / 100;
+        return clamp(1 + direction * amount, 0.5, 2);
+    }
+
+    function formatClockLabel(seconds) {
+        const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const remainder = totalSeconds % 60;
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+        }
+
+        return `${minutes}:${String(remainder).padStart(2, "0")}`;
+    }
+
+    function countWords(text) {
+        const matches = (text || "").match(/\S+/g);
+        return matches ? matches.length : 0;
+    }
+
+    function getControllerTitle() {
+        const title = (document.title || "").trim();
+        if (title) {
+            return title;
+        }
+
+        const hostname = safeHostname(location.href);
+        return hostname || "Current page";
+    }
+
+    function safeHostname(url) {
+        try {
+            return new URL(url).hostname.replace(/^www\./, "");
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function formatRateLabel(rate) {
+        return RATE_LABELS[rate] || "1.0x";
+    }
+
+    function formatVoiceName(voiceName) {
+        if (!voiceName) {
+            return "Default voice";
+        }
+
+        const segments = voiceName.split("-");
+        const rawName = segments[2] || voiceName;
+        return rawName
+            .replace(/Neural$/i, "")
+            .replace(/([a-z])([A-Z])/g, "$1 $2");
+    }
+
+    function formatVoiceLabel(voiceName) {
+        if (!voiceName) {
+            return "Default voice";
+        }
+
+        const segments = voiceName.split("-");
+        const locale = segments.length >= 2 ? `${segments[0]}-${segments[1]}`.toUpperCase() : "";
+        const name = formatVoiceName(voiceName);
+        return locale ? `${name} (${locale})` : name;
+    }
+
+    function controllerIcon(name) {
+        const icons = {
+            play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"></path></svg>',
+            pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"></path></svg>',
+            previous: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm12 0L8 12l10 6z"></path></svg>',
+            next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM6 6l10 6-10 6z"></path></svg>',
+            rewind: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 0 6.6 9.3h-2.2A5 5 0 1 1 12 7h1.8L11 9.8 12.4 11 18 5.4 12.4-.2 11 1.2 13.8 4H12z"></path><text x="12" y="18" text-anchor="middle" font-size="6" font-family="Arial, sans-serif">15</text></svg>',
+            forward: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-6.6 9.3h2.2A5 5 0 1 0 12 7h-1.8L13 9.8 11.6 11 6 5.4 11.6-.2 13 1.2 10.2 4H12z"></path><text x="12" y="18" text-anchor="middle" font-size="6" font-family="Arial, sans-serif">15</text></svg>',
+            stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"></path></svg>'
+        };
+
+        return icons[name] || "";
     }
 
     function ensureFloatingController() {
@@ -821,13 +1309,55 @@
         controller.hidden = true;
         controller.dataset.visible = "false";
         controller.innerHTML = `
-            <div class="twelve-reader-controller__meta">
-                <span class="twelve-reader-controller__badge">Cadence</span>
-                <span id="${CONTROLLER_STATUS_ID}" class="twelve-reader-controller__status">Reading aloud</span>
+            <button id="${CONTROLLER_CLOSE_ID}" type="button" class="twelve-reader-controller__close" aria-label="Close reader">&times;</button>
+            <div class="twelve-reader-controller__artifact">
+                <div class="twelve-reader-controller__cover" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="twelve-reader-controller__meta">
+                    <span id="${CONTROLLER_TITLE_ID}" class="twelve-reader-controller__title">Current page</span>
+                    <span id="${CONTROLLER_SUBTITLE_ID}" class="twelve-reader-controller__subtitle">Narrator: DEFAULT VOICE</span>
+                    <span id="${CONTROLLER_STATUS_ID}" class="twelve-reader-controller__sr-only" aria-live="polite">Preparing audio</span>
+                </div>
             </div>
-            <div class="twelve-reader-controller__actions">
-                <button id="${CONTROLLER_TOGGLE_ID}" type="button">Pause</button>
-                <button id="${CONTROLLER_STOP_ID}" type="button">Stop</button>
+            <div class="twelve-reader-controller__transport">
+                <div class="twelve-reader-controller__actions">
+                    <button id="${CONTROLLER_REWIND_ID}" type="button" class="twelve-reader-controller__icon-button" aria-label="Jump back 15 seconds" data-control-action="rewind">${controllerIcon("rewind")}</button>
+                    <button id="${CONTROLLER_PREVIOUS_ID}" type="button" class="twelve-reader-controller__icon-button" aria-label="Previous sentence" data-control-action="previous">${controllerIcon("previous")}</button>
+                    <button id="${CONTROLLER_TOGGLE_ID}" type="button" class="twelve-reader-controller__play-button" aria-label="Pause playback">${controllerIcon("pause")}</button>
+                    <button id="${CONTROLLER_NEXT_ID}" type="button" class="twelve-reader-controller__icon-button" aria-label="Next sentence" data-control-action="next">${controllerIcon("next")}</button>
+                    <button id="${CONTROLLER_FORWARD_ID}" type="button" class="twelve-reader-controller__icon-button" aria-label="Jump forward 15 seconds" data-control-action="forward">${controllerIcon("forward")}</button>
+                    <button id="${CONTROLLER_STOP_ID}" type="button" class="twelve-reader-controller__icon-button" aria-label="Stop reading" data-control-action="stop">${controllerIcon("stop")}</button>
+                </div>
+                <div class="twelve-reader-controller__timeline">
+                    <span id="${CONTROLLER_CURRENT_TIME_ID}" class="twelve-reader-controller__time">0:00</span>
+                    <input id="${CONTROLLER_SEEK_ID}" class="twelve-reader-controller__seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek reading position">
+                    <span id="${CONTROLLER_TOTAL_TIME_ID}" class="twelve-reader-controller__time">0:00</span>
+                </div>
+            </div>
+            <div class="twelve-reader-controller__settings">
+                <div class="twelve-reader-controller__setting">
+                    <label class="twelve-reader-controller__setting-label" for="${CONTROLLER_SPEED_ID}">Speed</label>
+                    <div class="twelve-reader-controller__setting-input-wrap">
+                        <select id="${CONTROLLER_SPEED_ID}" class="twelve-reader-controller__setting-select">
+                            <option value="-25%">0.75x</option>
+                            <option value="+0%" selected>1.0x</option>
+                            <option value="+25%">1.25x</option>
+                            <option value="+50%">1.5x</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="twelve-reader-controller__setting">
+                    <label class="twelve-reader-controller__setting-label" for="${CONTROLLER_VOICE_ID}">Voice</label>
+                    <div class="twelve-reader-controller__setting-input-wrap twelve-reader-controller__setting-input-wrap--voice">
+                        <select id="${CONTROLLER_VOICE_ID}" class="twelve-reader-controller__setting-select twelve-reader-controller__setting-select--voice" disabled>
+                            <option>Loading voices...</option>
+                        </select>
+                    </div>
+                </div>
             </div>
         `;
 
@@ -836,6 +1366,9 @@
                 const response = await chrome.runtime.sendMessage({ type: "FLOATING_TOGGLE_PLAYBACK" });
                 if (!response || !response.ok) {
                     throw new Error(response?.error || "Playback control failed.");
+                }
+                if (response.state) {
+                    applyReaderState(response.state);
                 }
             } catch (error) {
                 showToast(error.message || "Playback control failed.");
@@ -848,12 +1381,78 @@
                 if (!response || !response.ok) {
                     throw new Error(response?.error || "Stop failed.");
                 }
+                if (response.state) {
+                    applyReaderState(response.state);
+                }
             } catch (error) {
                 showToast(error.message || "Stop failed.");
             }
         });
 
+        controller.querySelector(`#${CONTROLLER_CLOSE_ID}`).addEventListener("click", async () => {
+            try {
+                const response = await chrome.runtime.sendMessage({ type: "FLOATING_STOP_READING" });
+                if (!response || !response.ok) {
+                    throw new Error(response?.error || "Terminate failed.");
+                }
+                hideFloatingController();
+            } catch (error) {
+                showToast(error.message || "Terminate failed.");
+            }
+        });
+
+        controller.querySelector(`#${CONTROLLER_REWIND_ID}`).addEventListener("click", () => {
+            void seekByEstimatedSeconds(-15);
+        });
+
+        controller.querySelector(`#${CONTROLLER_PREVIOUS_ID}`).addEventListener("click", () => {
+            void seekBySentence(-1);
+        });
+
+        controller.querySelector(`#${CONTROLLER_NEXT_ID}`).addEventListener("click", () => {
+            void seekBySentence(1);
+        });
+
+        controller.querySelector(`#${CONTROLLER_FORWARD_ID}`).addEventListener("click", () => {
+            void seekByEstimatedSeconds(15);
+        });
+
+        const seekInput = controller.querySelector(`#${CONTROLLER_SEEK_ID}`);
+        seekInput.addEventListener("input", () => {
+            state.isScrubbing = true;
+            state.scrubRatio = clamp(Number(seekInput.value) / 1000, 0, 1);
+            if (state.readerState) {
+                syncFloatingControllerProgress(state.readerState);
+            }
+        });
+
+        seekInput.addEventListener("change", () => {
+            void commitControllerSeekFromSlider();
+        });
+
+        seekInput.addEventListener("blur", () => {
+            if (!state.isScrubbing || !state.readerState) {
+                return;
+            }
+
+            state.isScrubbing = false;
+            syncFloatingControllerProgress(state.readerState);
+        });
+
+        controller.querySelector(`#${CONTROLLER_SPEED_ID}`).addEventListener("change", async (event) => {
+            const nextRate = RATE_STEPS.includes(event.target.value) ? event.target.value : "+0%";
+            await updateFloatingSetting({ rate: nextRate }, `Speed set to ${formatRateLabel(nextRate)}.`);
+        });
+
+        controller.querySelector(`#${CONTROLLER_VOICE_ID}`).addEventListener("change", async (event) => {
+            if (!event.target.value) {
+                return;
+            }
+            await updateFloatingSetting({ voiceName: event.target.value }, `Voice set to ${formatVoiceName(event.target.value)}.`);
+        });
+
         document.documentElement.appendChild(controller);
+        void ensureControllerVoices();
         return controller;
     }
 
@@ -888,81 +1487,449 @@
 
             #${CONTROLLER_ID} {
                 position: fixed;
-                right: 20px;
-                bottom: 20px;
-                display: flex;
+                left: 50%;
+                bottom: 16px;
+                width: min(1880px, calc(100vw - 32px));
+                display: grid;
+                grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1.6fr) auto;
                 align-items: center;
-                gap: 12px;
-                min-width: 220px;
-                max-width: min(360px, calc(100vw - 24px));
-                padding: 12px 14px;
-                border-radius: 18px;
-                background: rgba(17, 24, 39, 0.94);
-                color: #ffffff;
-                box-shadow: 0 18px 45px rgba(15, 23, 42, 0.28);
+                gap: 30px;
+                padding: 26px 32px;
+                border: 1px solid rgba(89, 102, 129, 0.14);
+                border-radius: 28px;
+                background: rgba(255, 255, 255, 0.98);
+                color: #111827;
+                box-shadow: 0 24px 55px rgba(15, 23, 42, 0.16);
+                backdrop-filter: blur(18px);
                 z-index: 2147483647;
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translate(-50%, 28px);
                 transition: opacity 180ms ease, transform 180ms ease;
-                font: 500 13px/1.4 Arial, sans-serif;
+                font: 500 14px/1.4 Inter, "Segoe UI", Arial, sans-serif;
+                box-sizing: border-box;
+            }
+
+            .twelve-reader-controller__close {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                width: 34px;
+                height: 34px;
+                border: 0;
+                border-radius: 999px;
+                background: transparent;
+                color: #8a8f98;
+                font: 500 24px/1 Inter, "Segoe UI", Arial, sans-serif;
+                cursor: pointer;
+                transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+            }
+
+            .twelve-reader-controller__close:hover {
+                background: #f3f4f6;
+                color: #111827;
+                transform: translateY(-1px);
+            }
+
+            .twelve-reader-controller__close:focus {
+                outline: none;
+                box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+            }
+
+            #${CONTROLLER_ID},
+            #${CONTROLLER_ID} * {
+                box-sizing: border-box;
             }
 
             #${CONTROLLER_ID}[data-visible="true"] {
                 opacity: 1;
-                transform: translateY(0);
+                transform: translate(-50%, 0);
+            }
+
+            .twelve-reader-controller__artifact {
+                display: flex;
+                align-items: center;
+                gap: 22px;
+                min-width: 0;
+            }
+
+            .twelve-reader-controller__cover {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                width: 76px;
+                height: 76px;
+                border-radius: 8px;
+                background: linear-gradient(180deg, #fbfbfc 0%, #eef2f7 100%);
+                border: 1px solid rgba(17, 24, 39, 0.06);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            }
+
+            .twelve-reader-controller__cover span {
+                width: 4px;
+                border-radius: 999px;
+                background: linear-gradient(180deg, #c7cfdd 0%, #99a9c3 100%);
+            }
+
+            .twelve-reader-controller__cover span:nth-child(1) {
+                height: 16px;
+            }
+
+            .twelve-reader-controller__cover span:nth-child(2) {
+                height: 28px;
+            }
+
+            .twelve-reader-controller__cover span:nth-child(3) {
+                height: 22px;
+            }
+
+            .twelve-reader-controller__cover span:nth-child(4) {
+                height: 12px;
             }
 
             .twelve-reader-controller__meta {
                 display: flex;
                 flex-direction: column;
-                gap: 2px;
+                gap: 6px;
                 min-width: 0;
-                flex: 1;
             }
 
-            .twelve-reader-controller__badge {
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 0.08em;
-                text-transform: uppercase;
-                color: rgba(136, 217, 218, 0.95);
-            }
-
-            .twelve-reader-controller__status {
+            .twelve-reader-controller__title {
+                font: 700 22px/1.12 Georgia, "Times New Roman", serif;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
 
+            .twelve-reader-controller__subtitle {
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: #8a8f98;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .twelve-reader-controller__sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .twelve-reader-controller__transport {
+                display: flex;
+                flex-direction: column;
+                gap: 18px;
+                min-width: 0;
+            }
+
             .twelve-reader-controller__actions {
                 display: flex;
-                gap: 8px;
+                align-items: center;
+                justify-content: center;
+                gap: 18px;
             }
 
-            .twelve-reader-controller__actions button {
-                min-height: 34px;
-                padding: 0 12px;
-                border: 1px solid rgba(255, 255, 255, 0.16);
-                border-radius: 999px;
-                background: rgba(255, 255, 255, 0.08);
-                color: #ffffff;
-                font: 600 12px/1 Arial, sans-serif;
+            .twelve-reader-controller__icon-button,
+            .twelve-reader-controller__play-button {
+                appearance: none;
+                border: 0;
+                padding: 0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
                 cursor: pointer;
+                transition: transform 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
             }
 
-            .twelve-reader-controller__actions button:hover:not(:disabled) {
-                background: rgba(255, 255, 255, 0.16);
+            .twelve-reader-controller__icon-button {
+                width: 42px;
+                height: 42px;
+                border-radius: 999px;
+                background: transparent;
+                color: #b2b8c2;
             }
 
-            .twelve-reader-controller__actions button:disabled {
+            .twelve-reader-controller__icon-button svg,
+            .twelve-reader-controller__play-button svg {
+                width: 22px;
+                height: 22px;
+                fill: currentColor;
+            }
+
+            .twelve-reader-controller__icon-button:hover:not(:disabled) {
+                background: #f3f4f6;
+                color: #111827;
+                transform: translateY(-1px);
+            }
+
+            .twelve-reader-controller__icon-button:disabled,
+            .twelve-reader-controller__play-button:disabled {
                 opacity: 0.55;
                 cursor: default;
+                transform: none;
+                box-shadow: none;
+            }
+
+            .twelve-reader-controller__play-button {
+                width: 76px;
+                height: 76px;
+                border-radius: 6px;
+                background: #090909;
+                color: #ffffff;
+                box-shadow: 0 18px 26px rgba(17, 17, 17, 0.18);
+            }
+
+            .twelve-reader-controller__play-button svg {
+                width: 30px;
+                height: 30px;
+            }
+
+            .twelve-reader-controller__play-button:hover:not(:disabled) {
+                background: #000000;
+                transform: translateY(-1px);
+            }
+
+            .twelve-reader-controller__timeline {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr) auto;
+                align-items: center;
+                gap: 16px;
+            }
+
+            .twelve-reader-controller__time {
+                font-size: 12px;
+                color: #8a8f98;
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+            }
+
+            .twelve-reader-controller__seek {
+                --twelve-reader-progress: 0%;
+                width: 100%;
+                height: 24px;
+                margin: 0;
+                background: transparent;
+                cursor: pointer;
+                appearance: none;
+                -webkit-appearance: none;
+            }
+
+            .twelve-reader-controller__seek:focus {
+                outline: none;
+            }
+
+            .twelve-reader-controller__seek:disabled {
+                cursor: default;
+                opacity: 0.55;
+            }
+
+            .twelve-reader-controller__seek::-webkit-slider-runnable-track {
+                height: 2px;
+                background: linear-gradient(to right, #111111 0%, #111111 var(--twelve-reader-progress), rgba(17, 17, 17, 0.12) var(--twelve-reader-progress), rgba(17, 17, 17, 0.12) 100%);
+            }
+
+            .twelve-reader-controller__seek::-webkit-slider-thumb {
+                width: 14px;
+                height: 14px;
+                margin-top: -6px;
+                border: 0;
+                border-radius: 999px;
+                background: #111111;
+                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.96);
+                appearance: none;
+                -webkit-appearance: none;
+            }
+
+            .twelve-reader-controller__seek::-moz-range-track {
+                height: 2px;
+                background: rgba(17, 17, 17, 0.12);
+            }
+
+            .twelve-reader-controller__seek::-moz-range-progress {
+                height: 2px;
+                background: #111111;
+            }
+
+            .twelve-reader-controller__seek::-moz-range-thumb {
+                width: 14px;
+                height: 14px;
+                border: 0;
+                border-radius: 999px;
+                background: #111111;
+                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.96);
+            }
+
+            .twelve-reader-controller__settings {
+                display: flex;
+                align-items: center;
+                gap: 34px;
+                justify-self: end;
+            }
+
+            .twelve-reader-controller__setting {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                min-width: 0;
+            }
+
+            .twelve-reader-controller__setting-label {
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: #8a8f98;
+            }
+
+            .twelve-reader-controller__setting-input-wrap {
+                position: relative;
+                min-width: 116px;
+            }
+
+            .twelve-reader-controller__setting-input-wrap--voice {
+                min-width: 168px;
+                max-width: 220px;
+            }
+
+            .twelve-reader-controller__setting-input-wrap::after {
+                content: "";
+                position: absolute;
+                top: 50%;
+                right: 14px;
+                width: 7px;
+                height: 7px;
+                border-right: 1.5px solid #7a818d;
+                border-bottom: 1.5px solid #7a818d;
+                transform: translateY(-65%) rotate(45deg);
+                pointer-events: none;
+            }
+
+            .twelve-reader-controller__setting-select {
+                width: 100%;
+                min-height: 40px;
+                padding: 0 34px 0 12px;
+                border: 1px solid rgba(17, 24, 39, 0.08);
+                border-radius: 4px;
+                background: #f6f7f9;
+                color: #111827;
+                font: 700 15px/1.2 Inter, "Segoe UI", Arial, sans-serif;
+                appearance: none;
+                -webkit-appearance: none;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+            }
+
+            .twelve-reader-controller__setting-select:hover:not(:disabled) {
+                border-color: rgba(17, 24, 39, 0.16);
+                background: #f3f4f6;
+            }
+
+            .twelve-reader-controller__setting-select:focus {
+                outline: none;
+                border-color: rgba(17, 24, 39, 0.22);
+                box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+            }
+
+            .twelve-reader-controller__setting-select:disabled {
+                cursor: default;
+                opacity: 0.7;
+            }
+
+            @media (max-width: 1180px) {
+                #${CONTROLLER_ID} {
+                    grid-template-columns: 1fr;
+                    gap: 18px;
+                    padding: 20px;
+                }
+
+                .twelve-reader-controller__artifact,
+                .twelve-reader-controller__settings {
+                    justify-self: stretch;
+                }
+
+                .twelve-reader-controller__actions {
+                    justify-content: flex-start;
+                }
+
+                .twelve-reader-controller__settings {
+                    justify-content: space-between;
+                    gap: 16px;
+                }
+            }
+
+            @media (max-width: 720px) {
+                #${CONTROLLER_ID} {
+                    width: calc(100vw - 20px);
+                    bottom: 10px;
+                    padding: 18px 16px;
+                    border-radius: 22px;
+                }
+
+                .twelve-reader-controller__artifact {
+                    align-items: flex-start;
+                }
+
+                .twelve-reader-controller__cover {
+                    width: 60px;
+                    height: 60px;
+                    border-radius: 8px;
+                }
+
+                .twelve-reader-controller__title {
+                    font-size: 18px;
+                }
+
+                .twelve-reader-controller__actions {
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+
+                .twelve-reader-controller__icon-button {
+                    width: 38px;
+                    height: 38px;
+                }
+
+                .twelve-reader-controller__play-button {
+                    width: 64px;
+                    height: 64px;
+                }
+
+                .twelve-reader-controller__timeline {
+                    grid-template-columns: 1fr;
+                    gap: 10px;
+                }
+
+                .twelve-reader-controller__time:last-child {
+                    justify-self: end;
+                }
+
+                .twelve-reader-controller__settings {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+
+                .twelve-reader-controller__setting-input-wrap,
+                .twelve-reader-controller__setting-input-wrap--voice {
+                    min-width: min(220px, calc(100vw - 72px));
+                    max-width: none;
+                }
             }
 
             #${TOAST_ID} {
                 position: fixed;
                 right: 20px;
-                bottom: 92px;
+                bottom: 160px;
                 max-width: 320px;
                 padding: 10px 14px;
                 border-radius: 999px;
