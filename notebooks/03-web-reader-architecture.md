@@ -1,132 +1,114 @@
 # 03 - Web Reader Architecture
 
-This lesson explains the uploaded-document web app.
+This lesson explains the current web reader.
 
-The main files are:
+It now supports two source types:
+
+- uploaded documents
+- pasted text that lives only for the current browser session
+
+Main files:
 
 - `apps/web/app.py`
 - `apps/web/templates/index.html`
 - `apps/web/static/js/app.js`
 
-## The main workflow
+## The two main flows
 
-Here is the full flow for the web reader:
+### Flow A: uploaded document
 
 ```text
 User uploads file
--> Flask saves original file
+-> Flask stores original file
 -> Browser renders the original file
--> Browser builds canonical text map from rendered output
--> Browser sends canonical text manifest to Flask
--> User clicks a location or presses play
--> Flask creates read session with edge-tts
+-> Browser builds canonical text map
+-> Browser sends manifest to Flask
+-> User clicks or presses play
+-> Flask creates read session
 -> Audio stream starts
 -> Timing events stream over SSE
 -> Browser highlights current sentence and word
 ```
 
-## Why the browser renders the document
+### Flow B: pasted text
 
-This is a very important design choice.
+```text
+User pastes text
+-> Browser renders text immediately
+-> Browser builds canonical text map
+-> User clicks or presses play
+-> Flask creates raw-text read session
+-> Audio stream starts
+-> Timing events stream over SSE
+-> Browser highlights current sentence and word
+```
 
-The browser renders the original document because the user wants to read in the original visual structure.
+## Why the browser still owns rendering
 
-Examples:
+The user cares about the visible reading surface.
 
-- PDF should look like PDF pages
-- DOCX should keep formatting as much as possible
-- Markdown should become clean HTML, not raw markdown symbols
-- TXT should be shown in readable blocks
+That means:
 
-That is why the frontend uses different renderers for different file types.
+- PDF should still look like PDF pages
+- DOCX should keep formatting when possible
+- Markdown should become readable HTML
+- pasted text should become a readable article surface
 
-## Why the browser builds the canonical text map
+The backend should not guess the final visual layout.
 
-The spoken text and the visible text must match.
+## Why uploaded documents use a manifest
 
-So the system does this:
+For uploaded files, the browser sends a canonical text manifest back to Flask because the browser already knows the exact reading order of the rendered surface.
 
-- render the real visible content first
-- walk the rendered DOM/text layer
-- build one canonical text string in reading order
-- store mapping from DOM runs to global text offsets
+That keeps highlighting aligned with what the user actually sees.
 
-This is better than backend-only extraction because the browser already knows exactly what the user sees.
+## Why pasted text skips file storage
 
-## Why the backend still matters
+Pasted text is intentionally lightweight.
 
-The frontend is not doing everything.
+The current design keeps it ephemeral:
+
+- no database storage
+- no permanent document record
+- no surviving refresh in the browser
+
+The browser simply renders it and asks the backend for a streaming session from raw text.
+
+## Current backend responsibilities
 
 The backend still owns:
 
-- file upload storage
+- file upload handling
 - voice list loading
-- session creation
-- audio stream production
+- read session creation
+- audio streaming
 - SSE timing events
+- runtime config and health endpoints
 
-That means the browser handles presentation and mapping, while Flask handles streaming speech infrastructure.
+## Current frontend responsibilities
 
-## The key web routes
+The frontend owns:
 
-Look at `apps/web/app.py` and find these concepts:
+- source-mode selection
+- renderer selection
+- canonical text mapping
+- click-to-read offsets
+- highlight drawing
+- media progress UI
 
-- landing page route
-- reader page route
-- upload route
-- document file route
-- manifest route
-- read session route
-- audio route
-- event route
+## Good design lesson here
 
-These routes form the public contract between frontend and backend.
+The web reader did not create a second totally separate app for pasted text.
 
-## Web design choices worth learning from
+Instead it reused the same reader surface and most of the same frontend state machine.
 
-### Keep sessions explicit
+That is a strong product-engineering choice:
 
-Instead of "start speaking somehow", the app creates a named read session.
-
-That is useful because sessions can be:
-
-- started
-- streamed
-- observed
-- cancelled
-
-### Keep the frontend stateful, but not too magical
-
-`apps/web/static/js/app.js` keeps the current document, the reading map, the current session, and the highlight state.
-
-That is normal.
-
-The important thing is that the state is named and updated deliberately.
-
-### Keep file rendering per type
-
-The code does not pretend PDF, DOCX, Markdown, and TXT are the same thing.
-
-That is good design.
-
-Different content types deserve different renderers.
-
-## Beginner architecture lesson
-
-When building your own app, do not start with a giant universal abstraction.
-
-Start with:
-
-- one product goal
-- one pipeline
-- one route per action
-- one renderer per file type
-- one state object per UI surface
-
-That is exactly the kind of structure you see here.
+- keep one UI model
+- branch only where the source type truly differs
 
 ## Checkpoint questions
 
-1. Why does the browser send a text manifest back to Flask instead of Flask generating all display text itself?
-2. Why is click-to-read easier when the frontend owns the text map?
-3. If you wanted to support EPUB next, would you add it to the backend first or the frontend first?
+1. Why do uploaded files need a manifest route while pasted text does not?
+2. Why is pasted text considered ephemeral in the current design?
+3. If EPUB support is added later, which part of the pipeline probably changes first?

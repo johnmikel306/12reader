@@ -74,6 +74,12 @@ Follow a hands-on path for building a smaller version yourself.
 
 See naming options, typography ideas, and a cleaner frontend direction for the product.
 
+### `13-current-state.md`
+
+See the current codebase snapshot after the latest product and deployment changes.
+
+This is the quickest notebook to read if you want the repo as it exists now, not only the original teaching sequence.
+
 ## Study strategy
 
 If a lesson feels difficult, stop and answer:

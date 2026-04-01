@@ -1,18 +1,18 @@
 # 09 - Visual Architecture Diagrams
 
-This notebook shows the repo as pictures made from text.
-
-These are not exact UML diagrams. They are beginner diagrams designed to help you think clearly.
+These diagrams show the current repo as simple text pictures.
 
 ## 1. Whole monorepo view
 
 ```text
 Cadence monorepo
 |
+|- app.py
+|- Dockerfile
 |- apps/web
 |  |- Flask backend
-|  |- web templates
-|  |- web frontend JS/CSS
+|  |- templates
+|  |- frontend JS/CSS
 |
 |- apps/extension
 |  |- popup
@@ -20,61 +20,57 @@ Cadence monorepo
 |  |- offscreen audio document
 |  |- content script
 |
-|- packages/reader-core
-   |- future shared reading logic
+|- notebooks
 ```
 
 ## 2. Web app high-level architecture
 
 ```text
 User
--> Browser UI (/reader)
--> Web frontend JS
+-> /reader
+-> web frontend JS
 -> Flask API
 -> edge-tts
 
 Then back:
 
 edge-tts
--> Flask streaming session
+-> Flask read session
 -> audio stream + SSE events
 -> browser audio + highlight UI
 ```
 
-## 3. Web app detailed reading flow
+## 3. Web app source paths
 
 ```text
+Source path A
 Upload file
 -> /api/upload
--> Flask stores original file
--> frontend chooses renderer by file type
--> frontend renders visible content
--> frontend builds canonical text map
--> frontend sends manifest to /api/documents/<id>/manifest
--> user clicks or presses play
--> frontend requests /api/read-sessions
--> Flask creates ReadSession
--> /audio streams MP3
--> /events streams word timing
--> frontend maps timing to DOM ranges
--> frontend paints sentence + word highlight
+-> browser renderer
+-> manifest route
+-> /api/read-sessions
+
+Source path B
+Paste text
+-> browser renderer
+-> /api/page-read-sessions
 ```
 
 ## 4. Web app source of truth map
 
 ```text
 Frontend owns:
-- rendered document
+- rendered surface
 - text mapping
-- click position
-- highlight drawing
+- click offsets
+- highlights
 
 Backend owns:
-- files
+- uploaded files
 - voices
-- sessions
-- streaming audio
-- streaming timing events
+- read sessions
+- audio stream
+- timing events
 ```
 
 ## 5. Extension architecture
@@ -86,61 +82,45 @@ Popup <-> Background service worker <-> Offscreen document
                 Content script <-> Webpage DOM
                      |
                      v
-                Flask backend -> edge-tts
+             Configured backend -> edge-tts
 ```
 
-## 6. Why the extension is split
+## 6. Extension attach flow
 
 ```text
-Popup
-- controls
-- settings UI
-
-Background
-- orchestration
-- persistence
-- backend calls
-
-Offscreen
-- audio playback
-- timing progress loop
-
-Content script
-- webpage text extraction
-- click-to-read
-- highlights
-- floating controls
+User opens popup or presses shortcut
+-> background pings content script
+-> if missing, background injects content.js
+-> content script becomes ready
+-> normal reading flow continues
 ```
 
 ## 7. Extension playback flow
 
 ```text
-User presses shortcut or popup button
--> background gets readable page text from content script
+User action
+-> background gets readable page text
 -> background POSTs /api/page-read-sessions
 -> backend creates session
 -> background tells offscreen to start session
--> offscreen loads audio stream + event stream
--> offscreen computes current spoken offset
+-> offscreen loads audio + event stream
+-> offscreen computes spoken offset
 -> background receives progress
--> background forwards READING_PROGRESS to content script
--> content script highlights page text
+-> background forwards progress to content script
+-> content script updates highlights and media controls
 ```
 
-## 8. Extension persistence flow
+## 8. Floating controller surface
 
 ```text
-Playback starts
--> background stores runtime state in chrome.storage.session
-
-Service worker goes idle and is unloaded
--> in-memory globals disappear
-
-User presses pause or reopens popup
--> background wakes up again
--> background reloads state from chrome.storage.session
--> background asks offscreen for live playback state
--> control works again
+Floating controller
+- close / terminate
+- jump back / previous sentence
+- play / pause
+- next sentence / jump forward
+- seek bar
+- speed select
+- voice select
 ```
 
 ## 9. Highlighting model
@@ -148,12 +128,12 @@ User presses pause or reopens popup
 ```text
 Visible text nodes
 -> canonical reading string
--> run boundaries (start/end offsets)
+-> offset map
 -> speech timing event arrives
--> character range determined
+-> character range resolved
 -> DOM range reconstructed
 -> rectangles measured
--> overlay blocks drawn on screen
+-> overlay blocks drawn
 ```
 
 ## 10. Failure map
@@ -162,23 +142,15 @@ Visible text nodes
 Possible failure
 -> likely area to inspect
 
-Upload fails
--> Flask upload route
+Pasted text renders but will not play
+-> web frontend session request branch
 
-Audio plays but no highlight
--> timing flow, offset mapping, content script overlay
+Extension popup works but page overlay does not appear
+-> background injection path + content script readiness
 
-Pause/resume fails in extension
--> background persistence + offscreen state sync
+Audio plays but highlights drift
+-> timing events + offset mapping
 
-Wrong word highlighted
--> canonical text mismatch or sentence/word mapping
+Render deploy boots but extension still hits localhost
+-> extension backend URL setting
 ```
-
-## Practice exercise
-
-Take one of the diagrams above and redraw it by hand.
-
-Then explain it out loud in your own words.
-
-If you can teach one diagram back to yourself, you understand that part much more deeply.

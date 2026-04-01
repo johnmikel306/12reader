@@ -1,8 +1,8 @@
 # 05 - Extension Architecture
 
-This is the hardest part of the repo, so read slowly.
+The extension is still the hardest part of the repo.
 
-The extension is not one program. It is several small programs working together.
+It is not one program. It is several smaller programs working together.
 
 Main files:
 
@@ -16,136 +16,110 @@ Main files:
 
 ### Popup
 
-What the user clicks from the browser toolbar.
+The toolbar control surface.
 
 Responsibilities:
 
-- show controls
-- show current state
-- send user actions to background
+- show state
+- let the user change voice and speed
+- let the user set the backend URL
+- send actions to the background worker
 
 ### Background service worker
 
-The main extension coordinator.
+The extension coordinator.
 
 Responsibilities:
 
-- handle commands
-- handle popup actions
-- talk to backend
+- handle popup actions and extension commands
+- talk to the backend
 - persist session state
-- talk to content script and offscreen document
+- inject the content script into already-open pages when needed
+- coordinate the offscreen document and content script
 
 ### Offscreen document
 
-A hidden extension page that can own audio playback.
+A hidden extension page that owns audio playback.
 
 Responsibilities:
 
 - play streamed audio
 - listen to timing events
-- compute current progress
+- compute live progress
 - report playback state back to background
 
 ### Content script
 
-Code injected into webpages.
+Code that runs inside webpages.
 
 Responsibilities:
 
-- read visible DOM text
-- map click locations to offsets
-- draw overlay highlights
-- show floating controls on the page
+- extract readable text
+- map clicks to reading offsets
+- draw sentence and word highlights
+- handle the floating media controller
+- respond to page-level shortcut input
 
-## Why the extension needs all these pieces
+## Current extension startup paths
 
-Because Manifest V3 has rules.
-
-Important constraint:
-
-- the background service worker can shut down when idle
-
-That is why you cannot safely keep all runtime state only in background memory.
-
-This repo solves that by:
-
-- persisting state in `chrome.storage.session`
-- letting the offscreen document report live playback state back when needed
-
-## Extension data flow
-
-### Start from popup or keyboard shortcut
+### Popup or extension command
 
 ```text
 User action
--> background asks content script for readable text
--> background calls Flask backend to create page read session
--> background tells offscreen document to start audio
--> offscreen streams audio and events
--> offscreen reports progress back to background
+-> background ensures content script is ready
+-> background gets readable page text
+-> background creates page read session
+-> background tells offscreen to start audio
+-> offscreen streams audio and timing
 -> background forwards progress to content script
--> content script highlights webpage text
+-> content script updates highlights and controller UI
 ```
 
-### Pause or resume
+### Page-level shortcut
 
-```text
-User action
--> background rehydrates state if needed
--> background tells offscreen to pause or resume
--> offscreen updates playback state
--> background persists new state
--> content script floating controls stay in sync
-```
+The content script also listens for `Ctrl/Cmd + U` on normal webpages so playback can start, pause, or resume without reopening the popup.
 
-## Why the extension uses the Flask backend
+## Why the backend is configurable now
 
-Because the extension wants `edge-tts`, and `edge-tts` is Python.
+The extension no longer assumes only one hardcoded local backend.
 
-So the extension is really a client of the local Flask app.
+It can point at:
 
-That means:
+- local Flask in development
+- a Render deployment in production
 
-- the backend must be running
-- the extension reads pages locally but outsources TTS generation to the backend
+That makes the extension more usable outside the developer machine.
 
-## Why there is a floating controller
+## Why no-reload attachment matters
 
-This is a product design decision.
+Previously, the user could need a page refresh before the extension overlay worked.
 
-The popup is useful, but it is far away from the content.
+The background worker now injects the content script into the current page on demand.
 
-The floating controller keeps controls near the reading experience.
+That is a good architecture lesson:
 
-This is a good UX lesson:
+- do not force a user-facing refresh if the platform can attach programmatically
 
-put the most common controls near the user's current focus.
+## Why there is a floating media controller
 
-## Why there are keyboard shortcuts
+The popup is useful for setup, but it is far from the content.
 
-Shortcuts reduce friction.
+The in-page controller now acts like a real media surface:
 
-They are especially useful for accessibility and power users.
+- play and pause
+- sentence jump
+- short seek jumps
+- draggable progress track
+- speed and voice controls
+- close button that terminates the current reading session
 
-In this repo, the extension now uses commands for:
+## Keyboard controls to remember
 
-- start reading from the top
-- pause/resume toggle
-
-## Architecture lesson
-
-When building browser extensions, always ask:
-
-- what code needs page DOM access?
-- what code needs browser APIs?
-- what code needs long-lived audio or media?
-- what state must survive worker restarts?
-
-Those answers usually tell you how to split the extension.
+- `Ctrl/Cmd + U` on the page toggles reading
+- extension commands still exist for browser-level shortcuts like start-from-top
 
 ## Checkpoint questions
 
-1. Why is webpage highlighting not done in the background script?
-2. Why is audio playback not done in the content script?
-3. Why is `chrome.storage.session` valuable here?
+1. Why is the offscreen document a better place for audio than the content script?
+2. Why does the background worker inject the content script instead of assuming it is always already active?
+3. Why is backend URL configuration handled in settings instead of hardcoded in the worker?

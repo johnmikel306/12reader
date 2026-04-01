@@ -1,137 +1,91 @@
 # 04 - Streaming TTS System Design
 
-This lesson explains the core streaming design shared by the web reader and the extension backend flow.
+This lesson explains the streaming design shared by the web reader and the extension backend flow.
 
-The most important file is `apps/web/app.py`.
+The main backend file is `apps/web/app.py`.
 
-## The main idea
+## Main idea
 
-The app does not synthesize a full document, save a complete file, then play it later.
+Cadence creates a read session and streams two things in parallel:
 
-Instead it creates a read session that streams two things in parallel:
+- MP3 audio
+- word timing events over SSE
 
-- audio chunks
-- word timing events
+That is true whether the source started as:
 
-That is the core system design idea.
+- an uploaded document
+- pasted text in the web reader
+- webpage text collected by the extension
 
-## Why streaming is better here
+## Why streaming fits this product
 
-If you generate everything first:
+Streaming makes it easy to:
 
-- the user waits longer
-- pause/resume/jump changes are clumsy
-- voice changes are slower
-- highlighting is harder to align in real time
+- start playback quickly
+- restart from a new offset
+- hot-swap voice or speed
+- keep the highlight UI synchronized
 
-If you stream:
+## Current session entry points
 
-- playback starts sooner
-- you can cancel old sessions quickly
-- you can restart at a new offset quickly
-- the UI feels more alive
+### `POST /api/read-sessions`
 
-## The `ReadSession` model
+Used when the source is an uploaded document that already has a frontend-built manifest.
 
-In `apps/web/app.py`, `ReadSession` is the main backend runtime object.
+### `POST /api/page-read-sessions`
 
-What it stores:
+Used when the source is raw text.
 
-- `session_id`
-- `text`
-- `start_offset`
-- `voice`
-- `rate`
-- `audio_chunks`
-- `events`
-- completion flags
-- cancellation state
+Examples:
 
-Why this matters:
+- pasted text in the web reader
+- webpage text from the extension
 
-It packages one unit of work into one object.
+## Why audio and events are separate streams
 
-That is a common architecture pattern.
+Audio alone tells the browser what to play.
 
-## Why there are two streams
+Timing events tell the browser what to highlight.
 
-### Audio stream
+Both are needed for a real follow-along reading experience.
 
-This is what the user hears.
+## Why offsets matter
 
-### SSE event stream
-
-This tells the browser which word is being spoken.
-
-Without the second stream, you can play audio, but you cannot do precise follow-along highlighting.
-
-## Why the backend emits character offsets
-
-Highlighting needs location, not just timing.
-
-So the backend tries to match each spoken boundary token back onto the session text and emits:
+The backend emits:
 
 - `char_start`
 - `char_end`
 - `time_start`
 - `time_end`
 
-That lets the frontend turn speech progress into visible highlights.
+The frontend then maps those offsets back onto the visible text surface.
 
-## Why session cancellation matters
+That is the core contract between speech and highlighting.
 
-Imagine the user:
+## Why cancellation still matters
 
-- clicks a new sentence
+Sessions are frequently replaced when the user:
+
+- clicks a different sentence
+- drags the seek bar
 - changes voice
 - changes speed
 - stops playback
 
-If old sessions keep running, the app becomes inconsistent.
+The system stays sane because it cancels and replaces sessions instead of letting old ones continue in the background.
 
-So the design uses cancellation and replacement, not only new playback.
+## Deployment note
 
-## Tradeoffs in this system
+The same backend serves:
 
-Every system design has tradeoffs.
+- local development
+- the extension when pointed at localhost
+- production deployment on Render
 
-### Pros
-
-- responsive playback
-- supports live controls
-- supports highlighting
-- works for both web app and extension backend usage
-
-### Cons
-
-- more moving parts than a static MP3 file
-- timing drift can still happen on tricky content
-- session state must be managed carefully
-
-## A beginner-friendly sequence diagram
-
-```text
-Frontend asks for session
--> Backend creates ReadSession
--> edge-tts streams word boundaries and audio
--> Backend buffers chunks and events
--> Audio endpoint yields MP3 stream
--> Events endpoint yields SSE messages
--> Frontend merges timing with visible text map
--> Frontend highlights spoken word and sentence
-```
-
-## Architecture lesson
-
-Whenever you need both media playback and synchronized UI, ask whether you need:
-
-- one stream for media
-- one stream for metadata
-
-That pattern appears in many real systems beyond TTS.
+The streaming model stays the same in each environment.
 
 ## Checkpoint questions
 
-1. Why is one audio stream alone not enough for follow-along reading?
-2. Why does the app cancel and replace sessions instead of mutating old ones in place?
-3. What kinds of bugs happen if timing metadata and text content disagree?
+1. Why is one MP3 stream not enough for highlighting?
+2. Why does the app use two session entry points instead of forcing everything through file upload?
+3. What bugs appear if the session text and the frontend text map disagree?

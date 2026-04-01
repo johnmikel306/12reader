@@ -1,62 +1,77 @@
 # 02 - Repo Tour
 
-This lesson gives you a mental map of the repo.
+This lesson gives you a current map of the repo.
 
 ## Root level
 
 ### `app.py`
 
-This is a thin entry point so you can still run the web app from the repo root.
-
-It imports the real Flask app from `apps/web/app.py`.
+A thin entry point that imports the real Flask app from `apps/web/app.py`.
 
 ### `requirements.txt`
 
-This points to `apps/web/requirements.txt` so the repo still installs the web app dependencies from the root.
+Installs the Python dependencies for the web app from the repo root.
+
+### `Dockerfile`
+
+Production container for Render.
+
+It installs Python dependencies and runs the Flask app with `gunicorn`.
 
 ### `package.json`
 
-This gives the monorepo a small JavaScript workspace shape and provides validation scripts.
+Provides lightweight repo scripts for validation.
 
 ### `README.md`
 
-This explains the monorepo at a high level.
+Short high-level project documentation.
+
+### `notebooks/`
+
+Architecture and learning notes for the repo.
 
 ## `apps/web`
 
-This is the uploaded-document product.
+This is the web reading product.
 
 ### `apps/web/app.py`
 
 Main backend responsibilities:
 
-- upload documents
-- serve original files back to the browser
-- accept a frontend-generated text manifest
-- list voices
-- create and manage streaming read sessions
-- stream audio and SSE timing events
+- serve the landing page and reader page
+- upload and serve document files
+- accept frontend-generated manifests for uploaded documents
+- create streaming read sessions
+- create raw-text read sessions for pasted text and webpage content
+- list available voices
+- expose runtime config and health routes
 
 ### `apps/web/templates/index.html`
 
-The main reader page for uploaded files.
+The main reader page.
+
+It now supports two input paths:
+
+- upload a document
+- paste text for a session-only reading surface
 
 ### `apps/web/static/js/app.js`
 
-The main frontend brain for the web reader.
+The main frontend state machine for the web reader.
 
 It handles:
 
-- rendering by file type
-- building the canonical text map
+- file upload flow
+- pasted-text flow
+- renderer selection by source type
+- canonical text mapping
 - click-to-read
-- sentence detection
 - highlight drawing
 - hot-swapping playback settings
 
 ### `apps/web/static/css/app.css`
 
-Reader UI styling.
+Reader styling for the control panel, viewer, progress bar, and pasted-text UI.
 
 ## `apps/extension`
 
@@ -64,15 +79,7 @@ This is the webpage-reading product.
 
 ### `apps/extension/manifest.json`
 
-The extension manifest.
-
-It declares:
-
-- permissions
-- background service worker
-- content script
-- popup
-- commands (keyboard shortcuts)
+Declares permissions, commands, popup, background worker, and content script registration.
 
 ### `apps/extension/background.js`
 
@@ -80,77 +87,71 @@ The extension orchestrator.
 
 It handles:
 
-- commands
-- popup actions
-- session state persistence
-- communication with the backend
-- communication with the offscreen document
-- communication with the content script
+- commands and popup actions
+- backend requests
+- session persistence
+- offscreen audio coordination
+- content-script messaging
+- on-demand content-script injection for already-open pages
+- backend URL configuration
 
 ### `apps/extension/offscreen.js`
 
-This owns audio playback for the extension.
+Owns audio playback for the extension.
 
-It:
-
-- opens the backend audio stream
-- listens to backend timing events
-- computes live progress
-- reports progress and playback state back to the background worker
+It plays the stream, listens to timing events, and reports live progress back to the background worker.
 
 ### `apps/extension/content.js`
 
-This runs inside webpages.
+Runs inside webpages.
 
-It:
+It handles:
 
-- extracts readable text from the page
-- maps clicks to reading offsets
-- highlights current word and sentence
-- shows floating controls
+- text extraction
+- click-to-read offsets
+- sentence and word highlights
+- the floating media controller
+- page-level shortcut handling
 
 ### `apps/extension/popup.*`
 
-Popup UI for manual control.
+Manual control surface for the extension.
+
+It now includes:
+
+- voice and speed controls
+- click-to-read toggle
+- backend URL input for local or Render usage
 
 ## `packages/reader-core`
 
-This is a future shared package area.
+Still a future shared-package area.
 
-Right now it is a placeholder for logic that could later be shared by both products.
+The repo does not yet move shared offset or segmentation logic there.
 
-Examples of future shared logic:
+## Runtime boundaries that matter most
 
-- sentence segmentation helpers
-- offset helpers
-- DOM range utilities
+### Boundary 1: browser rendering vs backend streaming
 
-## The most important runtime boundaries
+The browser renders visible text and owns highlight mapping.
 
-There are three big boundaries in this repo.
-
-### Boundary 1: frontend vs backend
-
-The backend streams audio and timing.
-The frontend renders and highlights.
+The backend owns TTS sessions, audio streaming, and timing events.
 
 ### Boundary 2: web app vs extension
 
-They solve a similar problem, but they are different applications with different runtime limits.
+They solve the same product problem with different runtime rules.
 
-### Boundary 3: extension internal boundaries
+### Boundary 3: extension internal split
 
-The extension is not one thing. It is four things:
+The extension is four cooperating pieces:
 
 - popup
 - background service worker
 - offscreen document
 - content script
 
-If you understand those boundaries, the extension becomes much less mysterious.
-
 ## Checkpoint questions
 
-1. Which file would you inspect if reading works but highlighting is wrong on uploaded documents?
-2. Which file would you inspect if the webpage extension can highlight but cannot play audio?
-3. Which file would you inspect if keyboard shortcuts stop working?
+1. Which file would you inspect if pasted text renders but playback does not start?
+2. Which file would you inspect if the extension popup can talk to the backend but the page overlay never appears?
+3. Which file would you inspect if the Render deployment starts but the app does not boot inside the container?
