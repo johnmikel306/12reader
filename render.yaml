@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: cadence
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: CADENCE_PUBLIC_BASE_URL
+        value: https://cadence-fm4s.onrender.com

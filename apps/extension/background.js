@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_BASE_URL = "http://127.0.0.1:5000";
+const DEFAULT_BACKEND_BASE_URL = "https://cadence-fm4s.onrender.com";
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 const CONTENT_SCRIPT_FILES = ["content.js"];
 const ACTIVE_TAB_STORAGE_KEY = "runtime:activeSpeechTabId";
